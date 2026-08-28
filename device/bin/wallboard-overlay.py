@@ -31,6 +31,11 @@ import os  # noqa: E402
 # MQTT and the old /api/state route no longer exists.
 STATE_FILE = os.environ.get("WALLBOARD_STATE_FILE", "/run/wallboard/state.json")
 STALE_AFTER = 12.0
+# The overlay is the only thing that knows when a ticker run has actually
+# finished scrolling. It drops the run id here so the daemon can clear the run
+# immediately instead of waiting out a generous time estimate.
+TICKER_DONE_FILE = os.environ.get("WALLBOARD_TICKER_DONE",
+                                 "/run/wallboard/ticker-done.json")
 POLL_MS = 300
 
 def build_css(scale):
@@ -218,12 +223,22 @@ class Ticker:
         self.area.queue_draw()
 
     def finish(self):
+        done = self.run_id
         self.destroy()
         self.text = ""
         self.x = None
         self.passes = 0
         self.alpha = 0.0
         self.phase = "idle"
+        if done:
+            try:
+                tmp = TICKER_DONE_FILE + ".tmp"
+                with open(tmp, "w") as fh:
+                    json.dump({"run_id": done, "at": time.time()}, fh)
+                os.replace(tmp, TICKER_DONE_FILE)
+                Overlay._log("TICKER done run=%s" % done)
+            except Exception as e:
+                Overlay._log("ticker done-file failed: %s" % e)
 
     # ---- driven by the state file ----------------------------------------
     def update(self, t):

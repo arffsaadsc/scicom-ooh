@@ -39,6 +39,8 @@ DB_PATH = os.environ.get("WALLBOARD_DB", "/var/lib/wallboard/wallboard.db")
 MEDIA_DIR = os.environ.get("WALLBOARD_MEDIA", os.path.join(os.path.dirname(DB_PATH), "media"))
 PORT = int(os.environ.get("WALLBOARD_PORT", "8080"))
 STATE_FILE = os.environ.get("WALLBOARD_STATE_FILE", "/run/wallboard/state.json")
+TICKER_DONE_FILE = os.environ.get("WALLBOARD_TICKER_DONE",
+                                 "/run/wallboard/ticker-done.json")
 PENDING_FILE = os.path.join(os.path.dirname(DB_PATH), "pending-settings.json")
 APPLY_HELPER = "/usr/local/bin/wallboard-settings-apply"
 CEC_DEV = os.environ.get("WALLBOARD_CEC", "/dev/cec0")
@@ -996,6 +998,10 @@ class Manager(threading.Thread):
         text = cfg["separator"].join(msgs)
         n = max(1, int(repeats if repeats else cfg["repeats"]))
         run_id = secrets.token_hex(4)
+        try:                       # a leftover file must not kill the new run
+            os.path.exists(TICKER_DONE_FILE) and os.unlink(TICKER_DONE_FILE)
+        except OSError:
+            pass
         with db() as c:
             c.execute("UPDATE ticker_batches SET active=0 WHERE active=1")
             bid = c.execute("INSERT INTO ticker_batches(run_id,text,items,repeats,source,started,active)"
@@ -1051,11 +1057,30 @@ class Manager(threading.Thread):
         """
         t = self.ticker
         if t:
+            # The overlay tells us the moment it has finished scrolling; without
+            # this the run lingered for tens of seconds after the bar was gone,
+            # so the page still said "on screen" and the batch stayed active.
+            try:
+                if os.path.exists(TICKER_DONE_FILE):
+                    with open(TICKER_DONE_FILE) as fh:
+                        done = json.load(fh)
+                    os.unlink(TICKER_DONE_FILE)
+                    if done.get("run_id") == t["run_id"]:
+                        log.info("ticker batch %s finished (overlay reported)",
+                                 t.get("batch_id"))
+                        with db() as c:
+                            c.execute("UPDATE ticker_batches SET active=0 WHERE active=1")
+                        self.ticker = None
+                        return
+            except Exception as e:
+                log.warning("ticker done-file unreadable: %s", e)
             cfg = t["cfg"]
             # worst case: text is ~30px per character wide, plus a screen width
             span = (len(t["text"]) * cfg["font_size"] + 4000) / max(20, cfg["speed"])
-            if time.time() - t["started"] > span * t["repeats"] + 30:
-                log.info("ticker batch %s expired", t.get("batch_id"))
+            # backstop only, for when the overlay is not running at all
+            if time.time() - t["started"] > span * t["repeats"] + 60:
+                log.info("ticker batch %s expired (no completion report)",
+                         t.get("batch_id"))
                 with db() as c:
                     c.execute("UPDATE ticker_batches SET active=0 WHERE active=1")
                 self.ticker = None
