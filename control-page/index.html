@@ -1,0 +1,1348 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>wallboard control</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#0d1117">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="apple-touch-icon" href="icon-192.png">
+<style>
+  :root{--bg:#0d1117;--panel:#161b22;--panel2:#1c232c;--line:#2a3038;--ink:#e6edf3;
+        --dim:#8b949e;--accent:#f778ba;--ok:#3fb950;--warn:#d29922;--bad:#f85149;
+        --mono:ui-monospace,"SF Mono",Menlo,monospace}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font:14px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif}
+  .wrap{max-width:1140px;margin:0 auto;padding:20px 16px 90px}
+  h1{font-size:18px;margin:0;letter-spacing:.02em}
+  h1 span{color:var(--dim);font-weight:400}
+  h2{font-size:12px;text-transform:uppercase;letter-spacing:.14em;color:var(--dim);
+     margin:24px 0 9px;font-weight:600}
+  a{color:var(--accent)}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:9px;
+        padding:13px 15px;margin-bottom:12px}
+  .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .sp{flex:1}
+  button{background:var(--panel2);color:var(--ink);border:1px solid var(--line);
+         border-radius:6px;padding:6px 11px;cursor:pointer;font:inherit;font-size:13px}
+  button:hover{border-color:#3d4650;background:#232b35}
+  button.primary{background:var(--accent);color:#1a0c14;border-color:var(--accent);font-weight:600}
+  button.danger{color:var(--bad)}
+  button:disabled{opacity:.4;cursor:not-allowed}
+  button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  input,select{background:#0d1218;color:var(--ink);border:1px solid var(--line);
+               border-radius:6px;padding:6px 9px;font:inherit;font-size:13px}
+  input.url{min-width:240px;flex:1;font-family:var(--mono);font-size:12px}
+  input.sm{width:70px}input.xs{width:58px}
+  input.name{font-weight:600;min-width:170px}
+  .pill{display:inline-block;font:11px/1.5 var(--mono);padding:1px 7px;border-radius:20px;
+        text-transform:uppercase;letter-spacing:.08em}
+  .pill.on{color:var(--ok);background:rgba(63,185,80,.14)}
+  .pill.off{color:var(--bad);background:rgba(248,81,73,.14)}
+  .pill.idle{color:var(--warn);background:rgba(210,153,34,.14)}
+  .status{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:1px;
+          background:var(--line);border:1px solid var(--line);border-radius:9px;overflow:hidden}
+  .status>div{background:var(--panel);padding:9px 12px}
+  .status dt{font:11px/1.4 var(--mono);text-transform:uppercase;letter-spacing:.1em;color:var(--dim);margin:0 0 2px}
+  .status dd{margin:0;font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  table{width:100%;border-collapse:collapse}
+  td,th{padding:5px 6px;border-bottom:1px solid var(--line);text-align:left;vertical-align:middle}
+  th{font:11px/1.4 var(--mono);text-transform:uppercase;letter-spacing:.09em;color:var(--dim);font-weight:600}
+  tr.active td{background:rgba(247,120,186,.09)}
+  .muted{color:var(--dim);font-size:12px}
+  .empty{color:var(--dim);font-style:italic;font-size:13px;padding:6px 0}
+  code{font-family:var(--mono);background:var(--panel2);padding:1px 5px;border-radius:4px;font-size:12px}
+  .devs{display:flex;gap:6px;flex-wrap:wrap}
+  .dev{border:1px solid var(--line);background:var(--panel2);border-radius:7px;padding:6px 10px;cursor:pointer}
+  .dev.sel{border-color:var(--accent);background:rgba(247,120,186,.12)}
+  .dev b{display:block;font-size:13px}
+  .log{font-family:var(--mono);font-size:11px;color:var(--dim);max-height:110px;overflow:auto;white-space:pre-wrap}
+  .grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px}
+  label.f{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--dim)}
+  .tabs{display:flex;gap:2px;border-bottom:1px solid var(--line);margin:22px 0 16px;overflow-x:auto}
+  .tab{background:transparent;border:none;border-radius:0;color:var(--dim);padding:9px 13px 10px;
+       font:inherit;font-size:13px;cursor:pointer;white-space:nowrap;position:relative;top:1px;
+       border-bottom:2px solid transparent}
+  .tab:hover{color:var(--ink)}
+  .tab.active{color:var(--ink);border-bottom-color:var(--accent)}
+  .tab .dot{display:none;width:6px;height:6px;border-radius:50%;background:var(--bad);
+            margin-left:6px;vertical-align:2px}
+  .tab .dot.show{display:inline-block}
+  .pane h2:first-child{margin-top:0}
+  .sched-wrap{overflow-x:auto}
+  .sched-grid{display:grid;grid-template-columns:44px 1fr;row-gap:6px;column-gap:8px;min-width:720px}
+  .sched-hours{grid-column:2;display:grid;grid-template-columns:repeat(24,1fr);
+               font:10px var(--mono);color:var(--dim);padding-bottom:2px}
+  .sched-hours span{border-left:1px solid var(--line);padding-left:3px;display:block}
+  .sched-day-label{font-size:12px;color:var(--dim);text-align:right;padding-right:2px;
+                    align-self:center;white-space:nowrap}
+  .sched-day-track{position:relative;background:#0d1218;border:1px solid var(--line);
+                    border-radius:5px;overflow:hidden}
+  .sched-hourline{position:absolute;top:0;bottom:0;width:1px;background:var(--line);opacity:.45}
+  .sched-tv{position:absolute;top:0;bottom:0;background:rgba(63,185,80,.16)}
+  .sched-block{position:absolute;height:14px;border-radius:3px;font:10px/14px inherit;
+               padding:0 5px;overflow:hidden;white-space:nowrap;color:#0d1117;font-weight:600}
+  .sched-legend{display:flex;gap:14px;flex-wrap:wrap;margin-top:12px;font-size:11px;color:var(--dim)}
+  .sched-legend .sw{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+  /* device -> display hierarchy */
+  .dev b .uid{display:block;font:10px var(--mono);color:var(--dim);font-weight:400;letter-spacing:.04em}
+  .disprow{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:2px}
+  .disp{border:1px solid var(--line);background:#0d1218;border-radius:7px;padding:7px 11px;
+        cursor:pointer;min-width:150px;text-align:left}
+  .disp.sel{border-color:var(--accent);background:rgba(247,120,186,.12)}
+  .disp b{display:block;font-size:13px}
+  .disp .sub{font:10px/1.5 var(--mono);color:var(--dim);text-transform:uppercase;letter-spacing:.06em}
+  .disp.gone{opacity:.45}
+  /* preview */
+  .pvwrap{display:flex;gap:14px;flex-wrap:wrap;align-items:flex-start}
+  .pvbox{position:relative;background:#000;border:1px solid var(--line);border-radius:8px;
+         overflow:hidden;width:480px;max-width:100%;aspect-ratio:16/9;flex:0 0 auto}
+  .pvbox img{width:100%;height:100%;object-fit:contain;display:block}
+  .pvbox .ph{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+             color:var(--dim);font:12px var(--mono);text-align:center;padding:12px}
+  .pvbox .age{position:absolute;right:6px;bottom:5px;font:10px var(--mono);color:#8b949e;
+              background:rgba(0,0,0,.55);padding:1px 5px;border-radius:4px}
+  /* collapsible playlists */
+  .plhead{cursor:pointer;user-select:none}
+  .caret{display:inline-block;width:14px;color:var(--dim);transition:transform .12s}
+  .caret.open{transform:rotate(90deg)}
+  .plbody[hidden]{display:none}
+  .chipbar{display:flex;gap:4px;flex-wrap:wrap}
+  .chip{font:10px var(--mono);color:var(--dim);background:var(--panel2);border:1px solid var(--line);
+        border-radius:20px;padding:1px 7px;text-transform:uppercase;letter-spacing:.05em}
+  progress{width:170px;height:8px}
+  .pvbox.live{cursor:crosshair;border-color:var(--accent)}
+  .pvbox.live::after{content:'INTERACTIVE';position:absolute;left:6px;top:5px;
+    font:10px var(--mono);letter-spacing:.1em;color:#1a0c14;background:var(--accent);
+    padding:1px 6px;border-radius:4px}
+  .keys{display:flex;gap:4px;flex-wrap:wrap;margin-top:8px}
+  .keys button{padding:4px 9px;font-family:var(--mono);font-size:12px}
+  #tkPreview{position:relative;overflow:hidden;border-radius:4px;display:flex;align-items:center}
+  #tkPreviewText{white-space:nowrap;will-change:transform;padding-left:100%;
+    animation:tkscroll linear infinite}
+  @keyframes tkscroll{from{transform:translateX(0)}to{transform:translateX(-100%)}}
+  .swatch{width:26px;height:26px;padding:0;border-radius:5px;border:1px solid var(--line);cursor:pointer}
+  .warnbox{border-left:3px solid var(--warn);background:rgba(210,153,34,.07);
+    padding:8px 11px;border-radius:0 6px 6px 0;margin-top:10px;font-size:12px;color:var(--dim)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="row">
+    <h1>wallboard <span>control</span></h1>
+    <div class="sp"></div>
+    <select id="connSel" style="max-width:200px" onchange="selectConn(this.value)"></select>
+    <button id="connbtn" onclick="reconnect()">Connect</button>
+    <span id="connpill" class="pill off">offline</span>
+    <button onclick="toggleConnMgr()" title="Add / edit broker connections">&#9881;</button>
+  </div>
+
+  <div class="card" id="connmgr" style="display:none">
+    <div class="grid2">
+      <label class="f">Connection name
+        <input id="cname" placeholder="Home Pi">
+      </label>
+      <label class="f">Broker (host:port, or a full ws(s):// url)
+        <input id="curl" class="url" placeholder="pi-name.tailxxxx.ts.net/mqtt">
+      </label>
+      <label class="f">Username <span class="muted">(optional, if the broker requires auth)</span>
+        <input id="cuser" autocomplete="off">
+      </label>
+      <label class="f">Password <span class="muted">(optional &mdash; stored locally in this browser only)</span>
+        <input id="cpass" type="password" autocomplete="off">
+      </label>
+      <label class="f">Topic root <span class="muted">(leave blank unless your device was configured otherwise)</span>
+        <input id="croot" placeholder="wallboard" autocomplete="off">
+      </label>
+    </div>
+    <p class="muted" id="schemehint" style="margin:8px 0 0"></p>
+    <div class="row" style="margin-top:10px">
+      <button class="primary" onclick="saveConnection()">Save &amp; connect</button>
+      <button class="danger" onclick="deleteConnection()" id="delconnbtn">Delete</button>
+      <div class="sp"></div>
+      <span class="muted">Add as many brokers as you like &mdash; switch with the dropdown above.</span>
+    </div>
+  </div>
+
+  <h2>Devices <span class="muted">parent device &rarr; its displays</span></h2>
+  <div class="card">
+    <div class="devs" id="devs"><span class="empty">Searching&hellip;</span></div>
+    <div class="disprow" id="disps" style="margin-top:11px"></div>
+  </div>
+
+  <div id="main" style="display:none">
+    <div class="tabs" id="tabnav">
+      <button class="tab active" data-tab="overview" onclick="switchTab('overview')">Overview</button>
+      <button class="tab" data-tab="schedule" onclick="switchTab('schedule')">Schedule</button>
+      <button class="tab" data-tab="playlists" onclick="switchTab('playlists')">Playlists</button>
+      <button class="tab" data-tab="media" onclick="switchTab('media')">Media</button>
+      <button class="tab" data-tab="ticker" onclick="switchTab('ticker')">Ticker</button>
+      <button class="tab" data-tab="tvsched" onclick="switchTab('tvsched')">TV schedule</button>
+      <button class="tab" data-tab="settings" onclick="switchTab('settings')">Device settings</button>
+      <button class="tab" data-tab="log" onclick="switchTab('log')">Log<span class="dot" id="logdot"></span></button>
+    </div>
+
+    <div class="pane" id="pane-overview">
+      <h2>Status <span class="muted" id="statusfor"></span></h2>
+      <dl class="status" id="status"></dl>
+
+      <h2>Live preview</h2>
+      <div class="card">
+        <div class="pvwrap">
+          <div class="pvbox" id="pvbox">
+            <div class="ph" id="pvph">Preview is off &mdash; the device sends nothing until you turn it on.</div>
+            <img id="pvimg" style="display:none" alt="display preview">
+            <span class="age" id="pvage" style="display:none"></span>
+          </div>
+          <div style="flex:1;min-width:210px">
+            <div class="row">
+              <button id="pvbtn" class="primary" onclick="togglePreview()">Start live preview</button>
+              <button onclick="onePreview()">Single frame</button>
+            </div>
+            <p class="muted" style="margin:9px 0 0">
+              Frames are captured on the Pi and downscaled to 480&nbsp;px (~20&ndash;40&nbsp;KB
+              every 3&nbsp;s). Nothing is captured while this is off, and the request
+              expires by itself if you close the page.
+            </p>
+            <div class="row" style="margin-top:12px;border-top:1px solid var(--line);padding-top:11px">
+              <button id="ixbtn" onclick="toggleInteractive()">Enable interactive</button>
+              <span class="muted" id="ixnote">click &amp; type into the shown tab &mdash; for logins</span>
+            </div>
+            <div id="ixpanel" style="display:none">
+              <div class="row" style="margin-top:9px">
+                <input id="ixtext" class="url" placeholder="text to send (click the field on screen first)"
+                       onkeydown="if(event.key==='Enter'){sendText();return false;}">
+                <button onclick="sendText()">Send text</button>
+                <label class="muted"><input type="checkbox" id="ixmask"> mask</label>
+              </div>
+              <div class="keys">
+                <button onclick="sendKey('Enter')">Enter</button>
+                <button onclick="sendKey('Tab')">Tab</button>
+                <button onclick="sendKey('Backspace')">Backspace</button>
+                <button onclick="sendKey('Escape')">Esc</button>
+                <button onclick="sendKey('ArrowUp')">&uarr;</button>
+                <button onclick="sendKey('ArrowDown')">&darr;</button>
+                <button onclick="sendKey('ArrowLeft')">&larr;</button>
+                <button onclick="sendKey('ArrowRight')">&rarr;</button>
+              </div>
+              <div class="warnbox">
+                Clicks and keystrokes travel to the device over MQTT. Your broker allows
+                anonymous access on the LAN and tailnet, so <strong>anything typed here is
+                visible to other devices on those networks</strong>. For real credentials
+                prefer VNC, which keeps them off the broker entirely.
+                <br>Rotation is paused while interactive is on, so the tab cannot change
+                under your cursor.
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="row">
+          <button onclick="cmd('auto')">Auto (schedule)</button>
+          <button onclick="cmd('idle')">Idle / DVD</button>
+          <button onclick="cmd('pause')" id="pausebtn">Pause</button>
+          <div class="sp"></div>
+          <button onclick="cmd('prev')">&larr; Prev</button>
+          <button onclick="cmd('next')">Next &rarr;</button>
+          <button onclick="cmd('reload')">Reload tab</button>
+          <button onclick="cmd('rebuild')">Rebuild</button>
+        </div>
+        <div class="row" style="margin-top:10px;border-top:1px solid var(--line);padding-top:10px">
+          <span class="muted">TV power (CEC)</span>
+          <button onclick="cmd('tv_on')">TV on</button>
+          <button onclick="cmd('tv_off')">TV off</button>
+          <button onclick="cmd('tv_status')">Query</button>
+          <span class="muted" id="tvout"></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="pane" id="pane-schedule" style="display:none">
+      <h2>Weekly schedule <span class="muted">playlists &amp; TV power, at a glance</span></h2>
+      <div class="card">
+        <div id="scheduleGrid"></div>
+      </div>
+    </div>
+
+    <div class="pane" id="pane-playlists" style="display:none">
+      <h2>Playlists</h2>
+      <div id="playlists"></div>
+      <div class="card">
+        <div class="row">
+          <input id="newpl" class="name" placeholder="New playlist name">
+          <input id="newdwell" class="sm" type="number" min="3" value="30">
+          <span class="muted">sec / tab</span>
+          <button class="primary" onclick="newPlaylist()">Create</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="pane" id="pane-media" style="display:none">
+      <h2>Media <span class="muted" id="freemb"></span></h2>
+      <div class="card">
+        <div class="row">
+          <select id="mplaylist"></select>
+          <input type="file" id="mfile" accept="image/*,video/*">
+          <button onclick="uploadMedia()" id="upbtn">Upload &amp; add</button>
+          <progress id="upbar" value="0" max="100" style="display:none"></progress>
+          <span class="muted" id="upnote"></span>
+        </div>
+        <p class="muted" style="margin:8px 0 0">
+          The file is sent <strong>straight to the device over MQTT</strong> in 48&nbsp;KB chunks &mdash; no third-party host, nothing public, and no link to expire. It works from a <code>file://</code> page, which a browser upload to an external host does not (Chromium blocks that as <code>blocked:origin</code>).
+          <br><strong>Photos</strong> use the playlist's seconds-per-tab.
+          <strong>Videos always play to completion</strong> &mdash; the device watches the
+          player and advances when the clip ends, so no dwell is needed.
+          Up to <span id="maxup">512</span>&nbsp;MB per file.
+        </p>
+        <div id="medialist"></div>
+      </div>
+    </div>
+
+    <div class="pane" id="pane-ticker" style="display:none">
+      <h2>Ticker bar <span class="muted">overlaid above everything on screen</span></h2>
+      <div class="card">
+        <div id="tkPreviewWrap">
+          <div class="muted" style="margin-bottom:6px">Preview</div>
+          <div id="tkPreview"><div id="tkPreviewText"></div></div>
+        </div>
+        <div class="grid2" id="tkConfig" style="margin-top:12px"></div>
+        <div class="row" style="margin-top:10px">
+          <button class="primary" onclick="tickerSaveConfig()">Save appearance</button>
+          <span class="muted" id="tkCfgNote"></span>
+        </div>
+      </div>
+
+      <h2>Messages <span class="muted">every run shows the whole enabled list, in order</span></h2>
+      <div id="tkWarn"></div>
+      <div class="card">
+        <div id="tkMsgs"></div>
+        <div class="row" style="margin-top:8px">
+          <input class="url" id="tkNew" placeholder="Message text" onkeydown="if(event.key==='Enter'){tickerAdd();return false;}">
+          <button onclick="tickerAdd()">Add message</button>
+        </div>
+      </div>
+
+      <h2>Push now</h2>
+      <div class="card">
+        <div class="row">
+          <button class="primary" onclick="tickerPush()">Push to display</button>
+          <span class="muted">passes</span>
+          <input class="xs" type="number" min="1" max="50" id="tkRepeats" placeholder="dflt">
+          <button onclick="cmd('ticker_stop')">Stop now</button>
+          <div class="sp"></div>
+          <span class="muted" id="tkRunning"></span>
+        </div>
+      </div>
+
+      <h2>Scheduled messages</h2>
+      <div class="card">
+        <div id="tkScheds"></div>
+        <div class="row" style="margin-top:8px">
+          <select id="tkKind" onchange="renderTicker()">
+            <option value="recurring">Repeats weekly</option>
+            <option value="oneoff">One-off</option>
+          </select>
+          <span id="tkDaysWrap"><input id="tkDays" value="0,1,2,3,4" style="width:110px;font-family:var(--mono)" title="0=Mon .. 6=Sun"></span>
+          <span id="tkDateWrap" style="display:none"><input id="tkDate" type="date"></span>
+          <input id="tkTime" type="time" value="09:00">
+          <input class="xs" type="number" min="1" max="50" id="tkSchedRepeats" placeholder="dflt">
+          <span class="muted">passes</span>
+          <button onclick="tickerSchedAdd()">Add</button>
+        </div>
+        <p class="muted" style="margin:8px 0 0">A one-off disables itself after it fires.
+          Both kinds run the full enabled message list.</p>
+      </div>
+    </div>
+
+    <div class="pane" id="pane-tvsched" style="display:none">
+      <h2>TV power schedule</h2>
+      <div class="card" id="tvsched"></div>
+    </div>
+
+    <div class="pane" id="pane-settings" style="display:none">
+      <h2>Device settings <span class="muted">(need apply / reboot)</span></h2>
+      <div class="card">
+        <div class="grid2" id="settings"></div>
+        <div class="row" style="margin-top:12px">
+          <button onclick="applySettings(false)">Apply</button>
+          <button class="danger" onclick="applySettings(true)">Apply &amp; reboot</button>
+          <button onclick="cmd('restart_app')">Restart app</button>
+          <div class="sp"></div><span class="muted" id="setnote"></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="pane" id="pane-log" style="display:none">
+      <h2>Log</h2>
+      <div class="card log" id="log"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ---------------------------------------------------------------------------
+// Minimal MQTT 3.1.1 over WebSocket. Hand-rolled so this stays a single file
+// with no CDN dependency - it must work opened straight off the filesystem.
+// ---------------------------------------------------------------------------
+function MQTT(url, onMsg, onState, username, password) {
+  var ws, pid = 1, alive = null, subs = [], self = this;
+  function enc(n){var o=[];do{var d=n%128;n=Math.floor(n/128);o.push(d|(n?128:0));}while(n);return o;}
+  function str(s){var b=new TextEncoder().encode(s||'');return [b.length>>8,b.length&255].concat(Array.from(b));}
+  function send(type, body){
+    var p = [type].concat(enc(body.length), body);
+    if (ws && ws.readyState === 1) ws.send(new Uint8Array(p));
+  }
+  this.connect = function(){
+    try { ws = new WebSocket(url, "mqtt"); } catch(e){ onState(false, String(e)); return; }
+    ws.binaryType = "arraybuffer";
+    ws.onopen = function(){
+      var cid = "wb-page-" + Math.random().toString(16).slice(2,10);
+      var flags = 2;                          // clean session
+      var payload = str(cid);
+      if (username) { flags |= 0x80; payload = payload.concat(str(username)); }
+      if (password) { flags |= 0x40; payload = payload.concat(str(password)); }
+      send(0x10, str("MQTT").concat([4, flags, 0, 30], payload));
+    };
+    ws.onclose = function(){ clearInterval(alive); onState(false,"closed"); };
+    ws.onerror = function(){ onState(false,"error"); };
+    ws.onmessage = function(ev){
+      var b = new Uint8Array(ev.data), i = 0;
+      while (i < b.length) {
+        var type = b[i] & 0xF0, mul = 1, len = 0, j = i + 1;
+        do { len += (b[j] & 127) * mul; mul *= 128; } while (b[j++] & 128);
+        var body = b.subarray(j, j + len);
+        if (type === 0x20) {                       // CONNACK
+          if (body[1] === 0) {
+            onState(true, "");
+            alive = setInterval(function(){ send(0xC0, []); }, 20000);
+            subs.forEach(function(t){ self.sub(t); });
+          } else onState(false, "refused rc=" + body[1] + connackHint(body[1]));
+        } else if (type === 0x30) {                // PUBLISH
+          var tl = (body[0] << 8) | body[1];
+          var topic = new TextDecoder().decode(body.subarray(2, 2 + tl));
+          var payload = new TextDecoder().decode(body.subarray(2 + tl));
+          onMsg(topic, payload);
+        }
+        i = j + len;
+      }
+    };
+  };
+  this.sub = function(topic){
+    if (subs.indexOf(topic) < 0) subs.push(topic);
+    send(0x82, [pid >> 8, pid & 255].concat(str(topic), [0])); pid++;
+  };
+  // Built as bytes rather than a JS array: an upload chunk is ~64 KB and
+  // Array.from()+concat on every one of several hundred messages is slow.
+  this.pub = function(topic, obj){
+    var t = new TextEncoder().encode(topic);
+    var b = new TextEncoder().encode(JSON.stringify(obj));
+    var body = 2 + t.length + b.length;
+    var lenBytes = enc(body);
+    var pkt = new Uint8Array(1 + lenBytes.length + body);
+    var i = 0;
+    pkt[i++] = 0x30;
+    for (var k = 0; k < lenBytes.length; k++) pkt[i++] = lenBytes[k];
+    pkt[i++] = t.length >> 8; pkt[i++] = t.length & 255;
+    pkt.set(t, i); i += t.length;
+    pkt.set(b, i);
+    if (ws && ws.readyState === 1) ws.send(pkt);
+  };
+  this.close = function(){ try{ clearInterval(alive); ws.close(); }catch(e){} };
+}
+function connackHint(rc){
+  return rc===4 ? " (bad username/password)" : rc===5 ? " (not authorized)" : "";
+}
+
+// ---------------------------------------------------------------------------
+var devices = {}, sel = null, selDisp = null, client = null;
+var PL = {playlists:[],media:[],tv_schedule:[]};      // library (device-wide)
+var ST = {}, DISP = {displays:[]}, SET = {current:{},outputs:[]}, pending = {};
+var PV = {on:false, ts:0, src:null, err:null, timer:null, renew:null};
+var COLLAPSED = JSON.parse(localStorage.getItem('wb_collapsed') || '{}');
+
+// Actions that act on ONE display rather than the whole device.
+var DISPLAY_SCOPED = ['play','idle','auto','next','prev','goto','reload','rebuild',
+                      'pause','preview_on','preview_off'];
+function DS(){ return ((ST.displays||{})[selDisp]) || {}; }
+
+var TABS = ['overview','schedule','playlists','media','ticker','tvsched','settings','log'];
+var curTab = localStorage.getItem('wb_tab') || 'overview';
+if (TABS.indexOf(curTab) < 0) curTab = 'overview';
+function switchTab(name){
+  if (TABS.indexOf(name) < 0) return;
+  curTab = name;
+  TABS.forEach(function(t){
+    document.getElementById('pane-'+t).style.display = (t===name?'':'none');
+  });
+  document.querySelectorAll('#tabnav .tab').forEach(function(b){
+    b.classList.toggle('active', b.dataset.tab===name);
+  });
+  localStorage.setItem('wb_tab', name);
+  if (name==='log') document.getElementById('logdot').classList.remove('show');
+  if (name==='schedule') renderSchedule();
+  if (name==='ticker') renderTicker();
+}
+
+function log(m){ var el=document.getElementById('log');
+  el.textContent = new Date().toLocaleTimeString()+"  "+m+"\n"+el.textContent.slice(0,3000);
+  if (curTab!=='log') document.getElementById('logdot').classList.add('show'); }
+function topicRoot(){ var c=activeConn(); return (c && c.root) || 'wallboard'; }
+function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,
+  function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
+// ---------------------------------------------------------------------------
+// Connection profiles - any number of brokers, saved per-browser.
+// ---------------------------------------------------------------------------
+// No defaults anywhere: the page ships knowing no broker, no host and no
+// device. Everything is entered by you and kept in this browser only.
+var CONNS = JSON.parse(localStorage.getItem('wb_connections') || '[]');
+var activeConnId = localStorage.getItem('wb_active_conn') || (CONNS[0] && CONNS[0].id) || null;
+
+function activeConn(){ return CONNS.filter(function(c){ return c.id===activeConnId; })[0] || null; }
+function persistConns(){
+  localStorage.setItem('wb_connections', JSON.stringify(CONNS));
+  localStorage.setItem('wb_active_conn', activeConnId || '');
+}
+function renderConnSel(){
+  var sel = document.getElementById('connSel');
+  sel.innerHTML = CONNS.length ? CONNS.map(function(c){
+    return '<option value="'+c.id+'"'+(c.id===activeConnId?' selected':'')+'>'+esc(c.name)+'</option>';
+  }).join('') : '<option value="">No saved connections</option>';
+}
+function selectConn(id){ activeConnId=id||null; persistConns(); reconnect(); }
+function toggleConnMgr(force){
+  var el=document.getElementById('connmgr');
+  var show = force!=null ? force : el.style.display==='none';
+  el.style.display = show ? '' : 'none';
+  document.getElementById('schemehint').textContent = location.protocol==='https:'
+    ? 'This page is loaded over HTTPS, so only secure brokers (wss://) can be reached - plain ws:// will be blocked by the browser.'
+    : 'Loaded over plain HTTP, so both ws:// and wss:// brokers work.';
+  if (show) {
+    var c=activeConn();
+    document.getElementById('cname').value = c ? c.name : '';
+    document.getElementById('curl').value  = c ? c.url  : '';
+    document.getElementById('cuser').value = c ? (c.username||'') : '';
+    document.getElementById('cpass').value = c ? (c.password||'') : '';
+    document.getElementById('croot').value = c ? (c.root||'') : '';
+    document.getElementById('delconnbtn').style.display = c ? '' : 'none';
+  }
+}
+function saveConnection(){
+  var name=document.getElementById('cname').value.trim();
+  var url=document.getElementById('curl').value.trim();
+  if(!name||!url){ alert('Give the connection a name and a broker address.'); return; }
+  var c=activeConn();
+  if(!c){ c={id:'c'+Date.now().toString(36)}; CONNS.push(c); }
+  c.name=name; c.url=url;
+  c.username=document.getElementById('cuser').value;
+  c.password=document.getElementById('cpass').value;
+  c.root=document.getElementById('croot').value.trim();
+  activeConnId=c.id;
+  persistConns(); renderConnSel(); toggleConnMgr(false);
+  reconnect();
+}
+function deleteConnection(){
+  var c=activeConn(); if(!c) return;
+  if(!confirm('Delete connection "'+c.name+'"?')) return;
+  CONNS=CONNS.filter(function(x){ return x.id!==c.id; });
+  activeConnId = CONNS.length ? CONNS[0].id : null;
+  persistConns(); renderConnSel();
+  if(client){ client.close(); client=null; }
+  devices={}; render(); onState(false,'connection removed');
+  toggleConnMgr(true);
+}
+function brokerUrl(){
+  var c=activeConn();
+  var v=(c && c.url || '').trim();
+  if(!v) return '';
+  if(!/^wss?:\/\//.test(v)){
+    v=(location.protocol==='https:'?'wss://':'ws://')+v;
+  }
+  if(!/\/[a-z]*$/i.test(v.replace(/^wss?:\/\//,''))) v=v.replace(/\/+$/,'')+'/mqtt';
+  return v;
+}
+function reconnect(){
+  if(client) client.close();
+  devices={}; render();
+  var c=activeConn();
+  if(!c){ onState(false,'no connection selected'); toggleConnMgr(true); return; }
+  client = new MQTT(brokerUrl(), onMsg, onState, c.username, c.password);
+  client.connect();
+}
+function onState(ok,why){
+  var p=document.getElementById('connpill');
+  p.className='pill '+(ok?'on':'off'); p.textContent=ok?'connected':'offline';
+  document.getElementById('connbtn').textContent = ok?'Reconnect':'Connect';
+  if(ok){ ['announce','status','library','displays','settings','ack'].forEach(function(t){
+            client.sub(topicRoot()+'/+/'+t); });
+          client.sub(topicRoot()+'/+/preview/+');
+          log('connected to '+brokerUrl()); }
+  else if(why) log('disconnected ('+why+')');
+}
+function onMsg(topic,payload){
+  var m=topic.split('/'); if(m.length<3) return;
+  var dev=m[1], kind=m[2], d;
+  // An empty payload is a retained-message deletion; ignore it rather than
+  // letting a blank device appear in the list.
+  if(!payload){ if(kind==='announce'){ delete devices[dev]; renderDevs(); } return; }
+  try{ d=JSON.parse(payload); }catch(e){ return; }
+  if(kind==='announce'){ devices[dev]=Object.assign(devices[dev]||{},d); if(!sel) selectDev(dev); }
+  else if(kind==='status'){ devices[dev]=Object.assign(devices[dev]||{},{online:d.online!==false});
+    if(dev===sel){ ST=d; ensureDisp(); renderStatus(); renderDisps(); } }
+  else if(kind==='library'  && dev===sel){ PL=d; renderPlaylists(); renderMedia(); renderTv(); renderSchedule(); renderTicker(); }
+  else if(kind==='displays' && dev===sel){ DISP=d; ensureDisp(); renderDisps(); }
+  else if(kind==='preview'  && dev===sel){ onPreview(m[3], d); }
+  else if(kind==='settings'  && dev===sel){ SET=d; renderSettings(); }
+  else if(kind==='ack' && dev===sel){
+    if(d.rid && ACKS[d.rid]) { ACKS[d.rid](d); if(d.action==='media_chunk') return; }
+    log((d.ok?'ok   ':'FAIL ')+d.action+(d.error?(' - '+d.error):'')
+        +(d.power?(' - '+d.power):'')+(d.output&&d.action&&d.action.indexOf('settings')===0?('\n'+d.output):''));
+    if(d.power) document.getElementById('tvout').textContent=d.power;
+    if(d.action==='settings_apply'&&d.ok) document.getElementById('setnote').textContent='applied';
+  }
+  renderDevs();
+}
+function selectDev(id){
+  if(sel!==id) stopPreview(true);
+  sel=id; selDisp=null; ST={}; DISP={displays:[]};
+  PL={playlists:[],media:[],tv_schedule:[]};
+  document.getElementById('main').style.display='';
+  switchTab(curTab);
+  renderDevs(); cmd('request_state');
+}
+function ensureDisp(){
+  var ids=displayIds();
+  if(selDisp && ids.indexOf(selDisp)>=0) return;
+  var saved=localStorage.getItem('wb_disp_'+sel);
+  selDisp = (saved && ids.indexOf(saved)>=0) ? saved : (ids[0]||null);
+}
+function displayIds(){
+  var fromDisp=(DISP.displays||[]).map(function(x){return x.id;});
+  if(fromDisp.length) return fromDisp;
+  return Object.keys(ST.displays||{});
+}
+function selectDisp(id){
+  if(selDisp===id) return;
+  if(IX.on) stopInteractive();
+  stopPreview(true);
+  selDisp=id; localStorage.setItem('wb_disp_'+sel,id);
+  renderDisps(); renderStatus(); renderPlaylists();
+}
+var ACKS = {};
+// Await a single command's ack. Used by the chunked uploader for flow control -
+// send a chunk, wait for the device to confirm it, then send the next.
+function cmdAwait(action, extra, timeoutMs){
+  return new Promise(function(resolve, reject){
+    if(!sel||!client){ reject(new Error('not connected')); return; }
+    var rid = Math.random().toString(16).slice(2,10);
+    var o = Object.assign({rid:rid, action:action}, extra||{});
+    if(DISPLAY_SCOPED.indexOf(action)>=0 && o.display==null && selDisp) o.display=selDisp;
+    var to = setTimeout(function(){ delete ACKS[rid];
+      reject(new Error('timed out waiting for '+action)); }, timeoutMs||25000);
+    ACKS[rid] = function(d){
+      clearTimeout(to); delete ACKS[rid];
+      d.ok ? resolve(d) : reject(new Error(d.error || (action+' failed')));
+    };
+    client.pub(topicRoot()+'/'+sel+'/cmd', o);
+  });
+}
+function cmd(action, extra){
+  if(!sel||!client) return;
+  var o=Object.assign({rid:Math.random().toString(16).slice(2,8),action:action},extra||{});
+  if(DISPLAY_SCOPED.indexOf(action)>=0 && o.display==null && selDisp) o.display=selDisp;
+  client.pub(topicRoot()+'/'+sel+'/cmd',o);
+  log('-> '+action+(o.display?(' ['+o.display+']'):''));
+}
+
+function renderDevs(){
+  var ks=Object.keys(devices);
+  document.getElementById('devs').innerHTML = ks.length? ks.map(function(k){
+    var d=devices[k], n=(d.displays||[]).length;
+    return '<div class="dev'+(k===sel?' sel':'')+'" onclick="selectDev(\''+k+'\')">'+
+      '<b>'+esc(d.name||k)+'<span class="uid">'+esc(k)+'</span></b>'+
+      '<span class="muted">'+esc(d.ip||'')+' &middot; '+
+      (d.online===false?'<span class="pill off">offline</span>':'<span class="pill on">online</span>')+
+      (n?' &middot; '+n+' display'+(n===1?'':'s'):'')+
+      '</span></div>';}).join('') : '<span class="empty">No devices announced yet.</span>';
+  renderDisps();
+}
+function renderDisps(){
+  var el=document.getElementById('disps');
+  if(!el) return;
+  if(!sel){ el.innerHTML=''; return; }
+  var rows=DISP.displays||[];
+  if(!rows.length){
+    rows=Object.keys(ST.displays||{}).map(function(id){ return {id:id,label:id,present:true}; });
+  }
+  if(!rows.length){ el.innerHTML='<span class="empty">No displays detected on this device.</span>'; return; }
+  el.innerHTML='<span class="muted" style="align-self:center">Displays</span>'+
+    rows.map(function(r){
+      var st=(ST.displays||{})[r.id]||{};
+      var badge = st.warming ? '<span class="pill idle">warming</span>'
+                : (st.chrome_up===false ? '<span class="pill off">no browser</span>'
+                : (st.idle ? '<span class="pill idle">idle</span>' : '<span class="pill on">playing</span>'));
+      return '<button class="disp'+(r.id===selDisp?' sel':'')+(r.present===false?' gone':'')+
+        '" onclick="selectDisp(\''+r.id+'\')">'+
+        '<b>'+esc(r.label||r.id)+'</b>'+
+        '<span class="sub">'+esc(r.id)+(r.mode?(' &middot; '+esc(r.mode)):'')+
+        (r.present===false?' &middot; unplugged':'')+'</span>'+
+        '<span class="chipbar" style="margin-top:4px">'+badge+
+        (r.mirror_group?'<span class="chip">mirror: '+esc(r.mirror_group)+'</span>':'')+
+        (st.playlist_name?'<span class="chip">'+esc(st.playlist_name)+'</span>':'')+
+        '</span></button>';
+    }).join('')+
+    '<span class="sp"></span>'+
+    '<button onclick="editDisplay()" title="Rename this display or put it in a mirror group">&#9881; Display setup</button>';
+}
+function editDisplay(){
+  if(!selDisp) return;
+  var row=(DISP.displays||[]).filter(function(x){return x.id===selDisp;})[0]||{};
+  var label=prompt('Label for '+selDisp+':', row.label||selDisp);
+  if(label===null) return;
+  var grp=prompt('Mirror group for '+selDisp+'.\n\nGive two displays the SAME group name and they '+
+                 'play the same playlist and switch together. Leave blank for independent.',
+                 row.mirror_group||'');
+  if(grp===null) grp=row.mirror_group||'';
+  cmd('display_update',{id:selDisp,label:label,mirror_group:grp});
+}
+function renderStatus(){
+  var s=DS();
+  document.getElementById('statusfor').textContent = selDisp ? ('for '+selDisp) : '';
+  var mode = s.warming ? '<span class="pill idle">warming '+s.warm_index+'/'+s.warm_total+'</span>'
+           : (s.idle ? '<span class="pill idle">idle / DVD</span>' : '<span class="pill on">playing</span>');
+  document.getElementById('status').innerHTML =
+    '<div><dt>Browser</dt><dd>'+(s.chrome_up?'<span class="pill on">up</span>':'<span class="pill off">down</span>')+'</dd></div>'+
+    '<div><dt>Mode</dt><dd>'+mode+(s.paused?' <span class="pill idle">paused</span>':'')+'</dd></div>'+
+    '<div><dt>Playlist</dt><dd>'+esc(s.playlist_name||'none')+'</dd></div>'+
+    '<div><dt>Tab</dt><dd>'+(s.tab_count?(s.index+1)+' / '+s.tab_count:'0')+'</dd></div>'+
+    '<div><dt>Showing</dt><dd>'+esc((s.current||{}).title||'-')+'</dd></div>'+
+    '<div><dt>Next in</dt><dd>'+((s.current&&s.current.is_video)?'end of clip':((s.seconds_left||0)+'s'))+'</dd></div>'+
+    '<div><dt>TV power</dt><dd>'+esc((ST.tv_power||'-').replace('pwr-state:','').trim())+'</dd></div>';
+  document.getElementById('pausebtn').textContent = s.paused?'Resume':'Pause';
+  if (curTab==='ticker') renderTicker();
+}
+function renderPlaylists(){
+  var ds=DS();
+  var out=(PL.playlists||[]).map(function(p){
+    var cur = ds.playlist_id===p.id;
+    var open = !COLLAPSED[p.id];
+    var nItems=(p.items||[]).length, nSched=(p.schedules||[]).length;
+    var items=(p.items||[]).map(function(it,i){
+      var act = cur && ds.index===i ? ' class="active"':'';
+      var kind = it.media_id ? mediaKind(it.media_id) : null;
+      var isVid = kind==='video';
+      // A video is governed by its own length, so a dwell box would be a lie.
+      var dwellCell = isVid
+        ? '<td><span class="chip">full length</span></td>'
+        : '<td><input class="xs" type="number" min="3" placeholder="'+p.dwell+'" value="'+(it.dwell||'')+
+          '" onchange="cmd(\'item_update\',{id:'+it.id+',dwell:this.value})"></td>';
+      var urlCell = it.media_id
+        ? '<td><span class="pill on">'+(isVid?'video':'photo')+'</span></td>'
+        : '<td><input class="url" value="'+esc(it.url)+'" onchange="cmd(\'item_update\',{id:'+it.id+',url:this.value})"></td>';
+      var viewCells = it.media_id
+        ? '<td class="muted">&mdash;</td><td class="muted">&mdash;</td>'
+        : '<td class="row" style="flex-wrap:nowrap;gap:3px">'+
+            '<button onclick="cmd(\'item_scroll\',{id:'+it.id+',delta:-200})">&uarr;</button>'+
+            '<input class="xs" type="number" value="'+(it.scroll_y||0)+'" onchange="cmd(\'item_scroll\',{id:'+it.id+',y:this.value})">'+
+            '<button onclick="cmd(\'item_scroll\',{id:'+it.id+',delta:200})">&darr;</button>'+
+            '<button onclick="cmd(\'item_grab_scroll\',{id:'+it.id+'})" title="Use the position it is at now">grab</button>'+
+          '</td>'+
+          '<td class="row" style="flex-wrap:nowrap;gap:3px">'+
+            '<button onclick="cmd(\'item_zoom\',{id:'+it.id+',delta:-0.1})">&minus;</button>'+
+            '<input class="xs" type="number" step="0.05" min="0.25" max="4" value="'+(it.zoom||1)+
+               '" onchange="cmd(\'item_zoom\',{id:'+it.id+',zoom:this.value})">'+
+            '<button onclick="cmd(\'item_zoom\',{id:'+it.id+',delta:0.1})">+</button>'+
+          '</td>';
+      return '<tr'+act+'><td class="muted">'+(i+1)+'</td>'+
+        '<td><input value="'+esc(it.title)+'" onchange="cmd(\'item_update\',{id:'+it.id+',title:this.value})"></td>'+
+        urlCell + dwellCell + viewCells +
+        '<td style="white-space:nowrap">'+
+          '<button onclick="move('+p.id+','+it.id+',-1)">&uarr;</button> '+
+          '<button onclick="move('+p.id+','+it.id+',1)">&darr;</button> '+
+          '<button onclick="cmd(\'goto\',{index:'+i+'})" title="Show now on the selected display">&#9654;</button> '+
+          '<button class="danger" onclick="cmd(\'item_delete\',{id:'+it.id+'})">&times;</button>'+
+        '</td></tr>';}).join('');
+    var scheds=(p.schedules||[]).map(function(sc){
+      return '<tr><td class="muted" style="font-family:var(--mono)">'+esc(sc.days)+'</td>'+
+        '<td class="muted">'+esc(sc.start_time)+' &rarr; '+esc(sc.end_time)+'</td>'+
+        '<td class="muted">'+(sc.display_id?esc(sc.display_id):'any display')+'</td>'+
+        '<td class="muted">prio '+sc.priority+'</td>'+
+        '<td><button class="danger" onclick="cmd(\'schedule_delete\',{id:'+sc.id+'})">&times;</button></td></tr>';
+    }).join('') || '<tr><td colspan="5" class="empty">No schedule &mdash; manual play only.</td></tr>';
+
+    var head='<div class="row plhead" onclick="toggleCollapse('+p.id+')">'+
+      '<span class="caret'+(open?' open':'')+'">&#9656;</span>'+
+      '<b style="font-size:14px">'+esc(p.name)+'</b>'+
+      '<span class="chipbar">'+
+        '<span class="chip">'+nItems+' item'+(nItems===1?'':'s')+'</span>'+
+        '<span class="chip">'+p.dwell+'s/tab</span>'+
+        (nSched?'<span class="chip">'+nSched+' window'+(nSched===1?'':'s')+'</span>':'')+
+        (p.keep_live?'<span class="chip">keep live</span>':'')+
+      '</span>'+
+      '<div class="sp"></div>'+(cur?'<span class="pill on">on '+esc(selDisp||'')+'</span> ':'')+
+      '<button class="primary" onclick="event.stopPropagation();cmd(\'play\',{playlist_id:'+p.id+'})">Play here</button> '+
+      '<button class="danger" onclick="event.stopPropagation();delPl('+p.id+')">Delete</button></div>';
+
+    var body='<div class="plbody"'+(open?'':' hidden')+'>'+
+      '<div class="row" style="margin-top:9px">'+
+        '<input class="name" value="'+esc(p.name)+'" onchange="cmd(\'playlist_update\',{id:'+p.id+',name:this.value})">'+
+        '<input class="sm" type="number" min="3" value="'+p.dwell+'" onchange="cmd(\'playlist_update\',{id:'+p.id+',dwell:this.value})">'+
+        '<span class="muted">sec/tab (photos &amp; dashboards)</span>'+
+        '<label class="muted"><input type="checkbox" '+(p.keep_live?'checked':'')+
+          ' onchange="cmd(\'playlist_update\',{id:'+p.id+',keep_live:this.checked?1:0})"> keep live</label>'+
+        '<label class="muted"><input type="checkbox" '+(p.reload_on_show?'checked':'')+
+          ' onchange="cmd(\'playlist_update\',{id:'+p.id+',reload_on_show:this.checked?1:0})"> reload on show</label>'+
+      '</div>'+
+      (items?'<table><thead><tr><th>#</th><th>Title</th><th>Source</th><th>Sec</th>'+
+        '<th>Scroll</th><th>Zoom</th><th></th></tr></thead><tbody>'+items+'</tbody></table>'
+       :'<div class="empty">No items yet.</div>')+
+      '<div class="row" style="margin-top:8px">'+
+        '<input class="url" id="u'+p.id+'" placeholder="https://grafana.internal/d/abc?kiosk">'+
+        '<input id="t'+p.id+'" placeholder="Title">'+
+        '<button onclick="addItem('+p.id+')">Add dashboard</button></div>'+
+      '<h2 style="margin:14px 0 6px">Playlist schedule</h2>'+
+      '<table><tbody>'+scheds+'</tbody></table>'+
+      '<div class="row" style="margin-top:6px">'+
+        '<input id="d'+p.id+'" value="0,1,2,3,4" style="width:110px;font-family:var(--mono)" title="0=Mon .. 6=Sun">'+
+        '<input id="s'+p.id+'" type="time" value="08:00"><input id="e'+p.id+'" type="time" value="18:00">'+
+        '<input id="p'+p.id+'" class="xs" type="number" value="0" title="priority">'+
+        '<select id="sd'+p.id+'"><option value="">any display</option>'+
+          displayIds().map(function(x){return '<option value="'+x+'">'+esc(x)+'</option>';}).join('')+
+        '</select>'+
+        '<button onclick="addSched('+p.id+')">Add window</button></div>'+
+      '</div>';
+    return '<div class="card">'+head+body+'</div>';}).join('');
+  document.getElementById('playlists').innerHTML =
+    ((PL.playlists||[]).length>1
+      ? '<div class="row" style="margin-bottom:10px"><span class="muted">'+
+        (PL.playlists||[]).length+' playlists</span><div class="sp"></div>'+
+        '<button onclick="collapseAll(false)">Expand all</button>'+
+        '<button onclick="collapseAll(true)">Collapse all</button></div>' : '')+
+    (out || '<div class="card empty">No playlists yet.</div>');
+  var sel2=document.getElementById('mplaylist');
+  if(sel2) sel2.innerHTML=(PL.playlists||[]).map(function(p){
+    return '<option value="'+p.id+'">'+esc(p.name)+'</option>';}).join('');
+  if(PL.max_upload_mb) { var mu=document.getElementById('maxup'); if(mu) mu.textContent=PL.max_upload_mb; }
+}
+function renderMedia(){
+  document.getElementById('freemb').textContent = PL.free_mb!=null ? ('- '+PL.free_mb+' MB free on device'):'';
+  var m=PL.media||[];
+  document.getElementById('medialist').innerHTML = m.length?
+    '<table><thead><tr><th></th><th>File</th><th>Size</th><th>Len</th><th>Used</th><th></th></tr></thead><tbody>'+
+    m.map(function(x){return '<tr><td>'+(x.kind==='video'?'&#9654;':'&#9635;')+'</td><td>'+esc(x.original)+'</td>'+
+      '<td class="muted">'+(x.bytes/1048576).toFixed(1)+' MB</td>'+
+      '<td class="muted">'+(x.duration?x.duration+'s':'-')+'</td>'+
+      '<td class="muted">'+x.uses+'</td>'+
+      '<td><button class="danger" onclick="cmd(\'media_delete\',{id:'+x.id+'})">Delete</button></td></tr>';}).join('')+
+    '</tbody></table>' : '<div class="empty">Nothing uploaded yet.</div>';
+}
+function renderTv(){
+  var t=PL.tv_schedule||[];
+  document.getElementById('tvsched').innerHTML =
+    (t.length? '<table><thead><tr><th>Days</th><th>On</th><th>Off</th><th></th></tr></thead><tbody>'+
+      t.map(function(x){return '<tr><td style="font-family:var(--mono)">'+esc(x.days)+'</td>'+
+        '<td>'+esc(x.on_time)+'</td><td>'+esc(x.off_time)+'</td>'+
+        '<td><button class="danger" onclick="cmd(\'tv_sched_delete\',{id:'+x.id+'})">&times;</button></td></tr>';}).join('')+
+      '</tbody></table>' : '<div class="empty">No TV schedule - power stays as-is.</div>')+
+    '<div class="row" style="margin-top:8px">'+
+      '<input id="tvdays" value="0,1,2,3,4" style="width:110px;font-family:var(--mono)" title="0=Mon .. 6=Sun">'+
+      '<span class="muted">on</span><input id="tvon" type="time" value="08:00">'+
+      '<span class="muted">off</span><input id="tvoff" type="time" value="19:00">'+
+      '<button onclick="addTv()">Add window</button></div>'+
+    '<p class="muted" style="margin:8px 0 0">Needs Anynet+ (HDMI-CEC) on the TV. '+
+      'Outside every window the device leaves the TV alone.</p>';
+}
+// ---------------------------------------------------------------------------
+// Weekly schedule grid - playlist windows + TV on/off, combined visually.
+// ---------------------------------------------------------------------------
+var PLCOLORS=['#f778ba','#58a6ff','#3fb950','#d29922','#bc8cff','#39c5cf','#ff9492','#79c0ff'];
+var DAYNAMES=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+function hashCode(s){ var h=0; for(var i=0;i<s.length;i++){ h=((h<<5)-h+s.charCodeAt(i))|0; } return h; }
+function colorFor(id){ return PLCOLORS[Math.abs(hashCode(String(id)))%PLCOLORS.length]; }
+function toMin(t){ if(!t) return 0; var p=String(t).split(':'); return (+p[0]||0)*60+(+p[1]||0); }
+function mmToHHMM(m){ m=((m%1440)+1440)%1440; var h=Math.floor(m/60), mm=m%60;
+  return (h<10?'0':'')+h+':'+(mm<10?'0':'')+mm; }
+function daysArr(s){
+  return String(s==null?'':s).split(',').map(function(x){return parseInt(x.trim(),10);})
+    .filter(function(n){return n>=0 && n<=6;});
+}
+// Expand a days+start+end window into per-day minute segments, splitting
+// across midnight if the window wraps (e.g. on 19:00 -> off 08:00).
+function expandWindow(days, startT, endT){
+  var s=toMin(startT), e=toMin(endT), out=[];
+  days.forEach(function(d){
+    if(e>s){ out.push({day:d, start:s, end:e}); }
+    else if(e===s){ out.push({day:d, start:0, end:1440}); }
+    else{ out.push({day:d, start:s, end:1440}); out.push({day:(d+1)%7, start:0, end:e}); }
+  });
+  return out;
+}
+function assignLanes(segs){
+  segs.sort(function(a,b){ return a.start-b.start || b.priority-a.priority; });
+  var laneEnds=[];
+  segs.forEach(function(s){
+    var lane=laneEnds.findIndex(function(endT){ return endT<=s.start; });
+    if(lane<0){ lane=laneEnds.length; laneEnds.push(0); }
+    s.lane=lane; laneEnds[lane]=s.end;
+  });
+  return laneEnds.length||1;
+}
+function renderSchedule(){
+  var el=document.getElementById('scheduleGrid');
+  if(!el) return;
+  var tvByDay={}, plByDay={}, d;
+  for(d=0; d<7; d++){ tvByDay[d]=[]; plByDay[d]=[]; }
+  (PL.tv_schedule||[]).forEach(function(w){
+    expandWindow(daysArr(w.days), w.on_time, w.off_time).forEach(function(seg){ tvByDay[seg.day].push(seg); });
+  });
+  (PL.playlists||[]).forEach(function(p){
+    (p.schedules||[]).forEach(function(sc){
+      expandWindow(daysArr(sc.days), sc.start_time, sc.end_time).forEach(function(seg){
+        plByDay[seg.day].push({start:seg.start, end:seg.end, name:p.name, color:colorFor(p.id), priority:sc.priority||0});
+      });
+    });
+  });
+  var laneCounts={};
+  for(d=0; d<7; d++) laneCounts[d]=assignLanes(plByDay[d]);
+
+  var hourHeader='<div></div><div class="sched-hours">'+
+    Array.from({length:24}).map(function(_,h){ return '<span>'+(h%3===0?h:'')+'</span>'; }).join('')+'</div>';
+
+  var rows=DAYNAMES.map(function(dn,dd){
+    var laneH=16, trackH=Math.max(38, laneCounts[dd]*laneH+8);
+    var tvHtml=tvByDay[dd].map(function(seg){
+      return '<div class="sched-tv" style="left:'+(seg.start/1440*100)+'%;width:'+((seg.end-seg.start)/1440*100)+
+        '%" title="TV on '+mmToHHMM(seg.start)+'\u2013'+mmToHHMM(seg.end)+'"></div>';
+    }).join('');
+    var hourLines=Array.from({length:23}).map(function(_,h){
+      return '<div class="sched-hourline" style="left:'+((h+1)/24*100)+'%"></div>';
+    }).join('');
+    var blocks=plByDay[dd].map(function(s){
+      return '<div class="sched-block" style="left:'+(s.start/1440*100)+'%;width:'+((s.end-s.start)/1440*100)+
+        '%;top:'+(4+s.lane*laneH)+'px;background:'+s.color+'" title="'+esc(s.name)+' '+
+        mmToHHMM(s.start)+'\u2013'+mmToHHMM(s.end)+' (priority '+s.priority+')">'+esc(s.name)+'</div>';
+    }).join('');
+    return '<div class="sched-day-label">'+dn+'</div>'+
+      '<div class="sched-day-track" style="height:'+trackH+'px">'+tvHtml+hourLines+blocks+'</div>';
+  }).join('');
+
+  var legend=(PL.playlists||[]).map(function(p){
+    return '<span><span class="sw" style="background:'+colorFor(p.id)+'"></span>'+esc(p.name)+'</span>';
+  }).join('')+'<span><span class="sw" style="background:rgba(63,185,80,.5)"></span>TV scheduled on</span>';
+
+  el.innerHTML='<div class="sched-wrap"><div class="sched-grid">'+hourHeader+rows+'</div></div>'+
+    '<div class="sched-legend">'+((PL.playlists||[]).length?legend:'<span class="muted">No playlists yet.</span>')+'</div>';
+}
+var SETDEF=[["name","Display name","text"],["resolution","Resolution (e.g. 1920x1080)","text"],
+  ["refresh","Refresh Hz","text"],["rotation","Rotation (normal/90/180/270)","text"],
+  ["hdmi_4kp60","Enable 4Kp60 (1/0)","text"],["overscan","Overscan (1/0)","text"],
+  ["hostname","Hostname","text"],["timezone","Timezone","text"],
+  ["keyboard","Keyboard layout (us/gb)","text"],
+  ["kiosk_autostart","Kiosk autostart (1/0)","text"],["blanking","Screen blanking (1/0)","text"]];
+function renderSettings(){
+  var c=SET.current||{};
+  document.getElementById('settings').innerHTML = SETDEF.map(function(f){
+    var v = pending[f[0]]!=null?pending[f[0]]:(c[f[0]]!=null?c[f[0]]:'');
+    return '<label class="f">'+esc(f[1])+
+      '<input data-k="'+f[0]+'" value="'+esc(v)+'" oninput="pending[this.dataset.k]=this.value"></label>';}).join('');
+  document.getElementById('setnote').textContent =
+    (SET.output&&SET.output.mode? ('live output: '+SET.output.output+' '+SET.output.mode+'  ') : '')+
+    (SET.pending? 'staged changes not applied':'');
+}
+function applySettings(reboot){
+  cmd('settings_set', pending);
+  setTimeout(function(){ cmd('settings_apply',{reboot:!!reboot}); pending={}; }, 700);
+}
+function newPlaylist(){
+  var n=document.getElementById('newpl').value.trim(); if(!n) return;
+  cmd('playlist_create',{name:n,dwell:+document.getElementById('newdwell').value||30});
+  document.getElementById('newpl').value='';
+}
+function delPl(id){ if(confirm('Delete this playlist?')) cmd('playlist_delete',{id:id}); }
+function addItem(pid){
+  var u=document.getElementById('u'+pid).value.trim(); if(!u) return;
+  cmd('item_add',{playlist_id:pid,url:u,title:document.getElementById('t'+pid).value.trim()});
+  document.getElementById('u'+pid).value='';
+}
+function addSched(pid){
+  var sd=document.getElementById('sd'+pid);
+  cmd('schedule_add',{playlist_id:pid,
+    days:document.getElementById('d'+pid).value, start_time:document.getElementById('s'+pid).value,
+    end_time:document.getElementById('e'+pid).value,
+    priority:+document.getElementById('p'+pid).value||0,
+    display_id:(sd&&sd.value)||''});
+}
+function addTv(){ cmd('tv_sched_add',{days:document.getElementById('tvdays').value,
+  on_time:document.getElementById('tvon').value, off_time:document.getElementById('tvoff').value}); }
+function move(pid,iid,dir){
+  var p=(PL.playlists||[]).filter(function(x){return x.id===pid;})[0]; if(!p) return;
+  var ids=p.items.map(function(i){return i.id;}), at=ids.indexOf(iid), to=at+dir;
+  if(to<0||to>=ids.length) return;
+  ids.splice(to,0,ids.splice(at,1)[0]);
+  cmd('item_reorder',{playlist_id:pid,ids:ids});
+}
+function bytesToB64(buf){
+  var bytes=new Uint8Array(buf), out='', CH=0x8000;
+  for(var i=0;i<bytes.length;i+=CH){
+    out+=String.fromCharCode.apply(null, bytes.subarray(i, i+CH));
+  }
+  return btoa(out);
+}
+async function uploadMedia(){
+  var f=document.getElementById('mfile').files[0], note=document.getElementById('upnote'),
+      bar=document.getElementById('upbar'), btn=document.getElementById('upbtn');
+  if(!f){ note.textContent='Pick a file first.'; return; }
+  var pid=+document.getElementById('mplaylist').value;
+  if(!pid){ note.textContent='Create a playlist first.'; return; }
+  var maxMb=PL.max_upload_mb||512;
+  if(f.size > maxMb*1048576){
+    note.textContent='That file is '+(f.size/1048576).toFixed(0)+' MB; the device accepts up to '+maxMb+' MB.';
+    return;
+  }
+  var isVid=/^video\//.test(f.type) || /\.(mp4|webm|m4v|mov|mkv|ogv)$/i.test(f.name);
+  if(isVid && !/\.(mp4|webm)$/i.test(f.name)){
+    if(!confirm('Chromium only reliably plays MP4 (H.264) and WebM.\n\n"'+f.name+
+                '" may upload fine but fail to play. Continue?')) return;
+  }
+  btn.disabled=true; bar.style.display=''; bar.value=0;
+  var uid=null, t0=Date.now();
+  try{
+    // Straight to the device over the broker we are already connected to. A
+    // file:// page cannot POST to a third-party host (Chromium blocks it as
+    // blocked:origin), and this also means no public temp host and no expiry.
+    note.textContent='starting upload of '+f.name+' ('+(f.size/1048576).toFixed(1)+' MB)\u2026';
+    var begun=await cmdAwait('media_begin',
+      {playlist_id:pid, filename:f.name, size:f.size}, 30000);
+    uid=begun.upload_id;
+    var CH=begun.chunk_size||262144;
+    var WINDOW=4;                       // chunks in flight; the socket keeps order
+    var seq=0, offset=0, acked=0, inflight=[];
+    function progress(){
+      var pct=acked/f.size*100;
+      bar.value=pct;
+      var rate=acked/1048576/((Date.now()-t0)/1000);
+      note.textContent='uploading '+(acked/1048576).toFixed(1)+' / '+(f.size/1048576).toFixed(1)+
+                       ' MB ('+pct.toFixed(0)+'%, '+rate.toFixed(1)+' MB/s)';
+    }
+    while(offset < f.size || inflight.length){
+      // Keep several chunks in flight rather than paying a round trip each.
+      while(inflight.length < WINDOW && offset < f.size){
+        var end=Math.min(offset+CH, f.size);
+        var buf=await f.slice(offset, end).arrayBuffer();
+        var n=end-offset;
+        inflight.push(cmdAwait('media_chunk',
+          {upload_id:uid, seq:seq, b64:bytesToB64(buf)}, 60000).then(function(){ return n; }));
+        offset=end; seq++;
+      }
+      var doneBytes=await inflight.shift();
+      acked+=doneBytes;
+      progress();
+    }
+    note.textContent='finishing'+(isVid?' \u2014 reading video length':'')+'\u2026';
+    var done=await cmdAwait('media_end', {upload_id:uid}, 180000);
+    note.textContent='added: '+f.name+(done.duration?(' \u2014 '+done.duration+'s clip'):'')+
+                     ' in '+((Date.now()-t0)/1000).toFixed(1)+'s';
+    document.getElementById('mfile').value='';
+  }catch(e){
+    note.textContent='upload failed: '+e.message;
+    if(uid) cmd('media_abort',{upload_id:uid});
+  }finally{
+    setTimeout(function(){ bar.style.display='none'; },1500);
+    btn.disabled=false;
+  }
+}
+// ---------------------------------------------------------------------------
+// Live preview. The device only captures while a page keeps asking, and the
+// request expires on its own, so a closed tab cannot leave the Pi encoding.
+// ---------------------------------------------------------------------------
+function togglePreview(){ PV.on ? stopPreview() : startPreview(); }
+function startPreview(){
+  if(!selDisp) return;
+  PV.on=true; PV.err=null;
+  cmd('preview_on',{seconds:35});
+  clearInterval(PV.renew);
+  PV.renew=setInterval(function(){ if(PV.on) cmd('preview_on',{seconds:35}); }, 15000);
+  clearInterval(PV.timer);
+  PV.timer=setInterval(renderPreview, 1000);
+  renderPreview();
+}
+function stopPreview(quiet){
+  var was=PV.on;
+  PV.on=false;
+  clearInterval(PV.renew); clearInterval(PV.timer);
+  PV.renew=PV.timer=null;
+  if(was && !quiet) cmd('preview_off');
+  renderPreview();
+}
+function onePreview(){ if(!selDisp) return; cmd('preview_on',{seconds:4}); PV.err=null; }
+function onPreview(display, d){
+  if(display!==selDisp) return;
+  if(d.error){ PV.err=d.error; renderPreview(); return; }
+  if(!d.jpeg_b64) return;
+  PV.err=null; PV.ts=Date.now();
+  PV.src='data:image/jpeg;base64,'+d.jpeg_b64;
+  renderPreview();
+}
+function renderPreview(){
+  var img=document.getElementById('pvimg'), ph=document.getElementById('pvph'),
+      age=document.getElementById('pvage'), btn=document.getElementById('pvbtn');
+  if(!img) return;
+  btn.textContent = PV.on ? 'Stop live preview' : 'Start live preview';
+  btn.className = PV.on ? '' : 'primary';
+  if(PV.src){
+    img.src=PV.src; img.style.display='';
+    ph.style.display='none';
+    var secs=Math.round((Date.now()-PV.ts)/1000);
+    age.style.display=''; age.textContent = (PV.err?('error: '+PV.err+' - '):'')+secs+'s ago';
+  } else {
+    img.style.display='none'; age.style.display='none'; ph.style.display='';
+    ph.textContent = PV.err ? ('Preview failed: '+PV.err)
+      : (PV.on ? 'Waiting for the first frame\u2026'
+               : 'Preview is off \u2014 the device sends nothing until you turn it on.');
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Interactive mode: forward real clicks and keystrokes into the tab that is on
+// screen, via CDP on the device. Enough to complete an SSO or login form
+// without opening VNC.
+// ---------------------------------------------------------------------------
+var IX = {on:false, pausedByUs:false};
+function toggleInteractive(){ IX.on ? stopInteractive() : startInteractive(); }
+function startInteractive(){
+  if(!selDisp){ alert('Pick a display first.'); return; }
+  IX.on=true;
+  // You cannot aim at a moving target: hold rotation while interacting.
+  var ds=DS();
+  if(!ds.paused){ cmd('pause'); IX.pausedByUs=true; } else { IX.pausedByUs=false; }
+  if(!PV.on) startPreview();
+  renderInteractive();
+}
+function stopInteractive(){
+  IX.on=false;
+  if(IX.pausedByUs){ cmd('pause'); IX.pausedByUs=false; }   // resume rotation
+  renderInteractive();
+}
+function renderInteractive(){
+  var btn=document.getElementById('ixbtn'), panel=document.getElementById('ixpanel'),
+      box=document.getElementById('pvbox'), note=document.getElementById('ixnote'),
+      txt=document.getElementById('ixtext'), mask=document.getElementById('ixmask');
+  if(!btn) return;
+  btn.textContent = IX.on ? 'Disable interactive' : 'Enable interactive';
+  btn.className = IX.on ? 'primary' : '';
+  panel.style.display = IX.on ? '' : 'none';
+  box.classList.toggle('live', IX.on);
+  note.textContent = IX.on
+    ? 'click the preview to click the screen; rotation is paused'
+    : 'click & type into the shown tab \u2014 for logins';
+  if(txt && mask) txt.type = mask.checked ? 'password' : 'text';
+}
+function previewClick(ev){
+  if(!IX.on) return;
+  var img=document.getElementById('pvimg');
+  if(!img || img.style.display==='none') return;
+  var r=img.getBoundingClientRect();
+  if(!r.width || !r.height) return;
+  var nx=(ev.clientX-r.left)/r.width, ny=(ev.clientY-r.top)/r.height;
+  if(nx<0||nx>1||ny<0||ny>1) return;
+  cmd('tab_click',{nx:+nx.toFixed(4), ny:+ny.toFixed(4)});
+  setTimeout(onePreview, 600);            // show the result quickly
+}
+function previewWheel(ev){
+  if(!IX.on) return;
+  ev.preventDefault();
+  var img=document.getElementById('pvimg'); if(!img) return;
+  var r=img.getBoundingClientRect();
+  var nx=(ev.clientX-r.left)/r.width, ny=(ev.clientY-r.top)/r.height;
+  cmd('tab_wheel',{nx:+nx.toFixed(4), ny:+ny.toFixed(4), dy: ev.deltaY>0?200:-200});
+  setTimeout(onePreview, 500);
+}
+function sendText(){
+  var el=document.getElementById('ixtext');
+  var t=el.value;
+  if(!t){ return; }
+  cmd('tab_text',{text:t});
+  el.value='';
+  setTimeout(onePreview, 600);
+}
+function sendKey(k){ cmd('tab_key',{key:k}); setTimeout(onePreview, 700); }
+
+// ---------------------------------------------------------------------------
+// Ticker: appearance, message list, manual push and schedules.
+// ---------------------------------------------------------------------------
+var TKFIELDS=[
+  ["position","Bar position","select",["top","bottom"]],
+  ["offset","Distance from that edge (px)","number"],
+  ["height","Bar height (px)","number"],
+  ["font_size","Text height (px)","number"],
+  ["text_color","Text colour","color"],
+  ["bar_color","Bar colour","color"],
+  ["speed","Scroll speed (px/sec)","number"],
+  ["repeats","Default passes per run","number"],
+  ["fade","Fade in/out (ms, 0 = snap)","number"],
+  ["bold","Bold text (1/0)","number"]
+];
+function TK(){ return (PL.ticker)||{config:{},messages:[],schedules:[],defaults:{}}; }
+var tkPending={};
+function tkVal(k){
+  var t=TK();
+  return tkPending[k]!=null ? tkPending[k]
+       : (t.config[k]!=null ? t.config[k] : (t.defaults[k]!=null ? t.defaults[k] : ''));
+}
+function tickerSaveConfig(){
+  cmd('ticker_config_set', tkPending);
+  document.getElementById('tkCfgNote').textContent='saved';
+  tkPending={};
+}
+function tickerAdd(){
+  var el=document.getElementById('tkNew'), v=el.value.trim();
+  if(!v) return;
+  cmd('ticker_msg_add',{text:v}); el.value='';
+}
+function tickerPush(){
+  var r=document.getElementById('tkRepeats').value;
+  cmd('ticker_push', r?{repeats:+r}:{});
+}
+function tickerMove(id,dir){
+  var ms=TK().messages.map(function(m){return m.id;});
+  var at=ms.indexOf(id), to=at+dir;
+  if(to<0||to>=ms.length) return;
+  ms.splice(to,0,ms.splice(at,1)[0]);
+  cmd('ticker_msg_reorder',{ids:ms});
+}
+function tickerSchedAdd(){
+  var kind=document.getElementById('tkKind').value;
+  var r=document.getElementById('tkSchedRepeats').value;
+  var o={kind:kind, at_time:document.getElementById('tkTime').value};
+  if(kind==='oneoff') o.at_date=document.getElementById('tkDate').value;
+  else o.days=document.getElementById('tkDays').value;
+  if(r) o.repeats=+r;
+  if(kind==='oneoff' && !o.at_date){ alert('Pick a date for a one-off.'); return; }
+  cmd('ticker_sched_add',o);
+}
+function renderTicker(){
+  var t=TK(), cfg=document.getElementById('tkConfig');
+  if(!cfg) return;
+  cfg.innerHTML=TKFIELDS.map(function(f){
+    var k=f[0], v=tkVal(k);
+    if(f[2]==='select'){
+      return '<label class="f">'+esc(f[1])+'<select data-k="'+k+'" onchange="tkPending[this.dataset.k]=this.value;renderTicker()">'+
+        f[3].map(function(x){return '<option value="'+x+'"'+(String(v)===x?' selected':'')+'>'+x+'</option>';}).join('')+
+        '</select></label>';
+    }
+    if(f[2]==='color'){
+      return '<label class="f">'+esc(f[1])+'<span class="row" style="gap:6px">'+
+        '<input class="swatch" type="color" data-k="'+k+'" value="'+esc(v)+'" '+
+        'oninput="tkPending[this.dataset.k]=this.value;renderTicker()">'+
+        '<input data-k="'+k+'" value="'+esc(v)+'" style="width:110px;font-family:var(--mono)" '+
+        'oninput="tkPending[this.dataset.k]=this.value;renderTicker()"></span></label>';
+    }
+    return '<label class="f">'+esc(f[1])+'<input type="number" data-k="'+k+'" value="'+esc(v)+'" '+
+      'oninput="tkPending[this.dataset.k]=this.value;renderTicker()"></label>';
+  }).join('');
+
+  // live preview using the pending values, so you see it before saving
+  var box=document.getElementById('tkPreview'), txt=document.getElementById('tkPreviewText');
+  var msgs=(t.messages||[]).filter(function(m){return m.enabled;}).map(function(m){return m.text;});
+  var joined=msgs.join('   \u2022   ') || '(no enabled messages)';
+  box.style.background=tkVal('bar_color')||'#0f766e';
+  box.style.height=(+tkVal('height')||64)+'px';
+  txt.style.color=tkVal('text_color')||'#fff';
+  txt.style.fontSize=(+tkVal('font_size')||30)+'px';
+  txt.style.fontWeight=(+tkVal('bold')?'700':'400');
+  txt.textContent=joined;
+  var px=Math.max(200, joined.length*(+tkVal('font_size')||30)*0.55);
+  txt.style.animationDuration=Math.max(3,(px+900)/Math.max(20,+tkVal('speed')||140))+'s';
+  // mirror the fade so the preview behaves like the real bar
+  var fade=Math.max(0,+tkVal('fade')||0);
+  box.style.transition='opacity '+(fade/1000)+'s linear';
+  box.style.opacity='1';
+
+  // messages
+  document.getElementById('tkMsgs').innerHTML = (t.messages||[]).length
+    ? '<table><thead><tr><th>#</th><th>Message</th><th>On</th><th></th></tr></thead><tbody>'+
+      t.messages.map(function(m,i){
+        return '<tr><td class="muted">'+(i+1)+'</td>'+
+          '<td><input class="url" value="'+esc(m.text)+'" onchange="cmd(\'ticker_msg_update\',{id:'+m.id+',text:this.value})"></td>'+
+          '<td><input type="checkbox" '+(m.enabled?'checked':'')+' onchange="cmd(\'ticker_msg_update\',{id:'+m.id+',enabled:this.checked?1:0})"></td>'+
+          '<td style="white-space:nowrap">'+
+            '<button onclick="tickerMove('+m.id+',-1)">&uarr;</button> '+
+            '<button onclick="tickerMove('+m.id+',1)">&darr;</button> '+
+            '<button class="danger" onclick="cmd(\'ticker_msg_delete\',{id:'+m.id+'})">&times;</button>'+
+          '</td></tr>';}).join('')+'</tbody></table>'
+    : '<div class="empty">No messages yet.</div>';
+
+  // the warning you asked for
+  var on=msgs.length;
+  document.getElementById('tkWarn').innerHTML = on>3
+    ? '<div class="card warnbox" style="margin:0 0 12px">Too many messages might make it hard to '+
+      'follow &mdash; '+on+' are enabled, and every run scrolls through all of them. '+
+      'Consider disabling some or shortening the text.</div>' : '';
+
+  // schedules
+  document.getElementById('tkScheds').innerHTML = (t.schedules||[]).length
+    ? '<table><thead><tr><th>Kind</th><th>When</th><th>Passes</th><th>On</th><th>Last run</th><th></th></tr></thead><tbody>'+
+      t.schedules.map(function(x){
+        var when = x.kind==='oneoff' ? (esc(x.at_date)+' '+esc(x.at_time))
+                 : (esc(x.days)+' at '+esc(x.at_time));
+        return '<tr><td class="muted">'+esc(x.kind)+'</td>'+
+          '<td style="font-family:var(--mono)">'+when+'</td>'+
+          '<td class="muted">'+(x.repeats||'default')+'</td>'+
+          '<td><input type="checkbox" '+(x.enabled?'checked':'')+' onchange="cmd(\'ticker_sched_update\',{id:'+x.id+',enabled:this.checked?1:0})"></td>'+
+          '<td class="muted">'+esc(x.last_run||'-')+'</td>'+
+          '<td><button class="danger" onclick="cmd(\'ticker_sched_delete\',{id:'+x.id+'})">&times;</button></td></tr>';
+      }).join('')+'</tbody></table>'
+    : '<div class="empty">Nothing scheduled.</div>';
+
+  var kind=document.getElementById('tkKind').value;
+  document.getElementById('tkDaysWrap').style.display = kind==='oneoff'?'none':'';
+  document.getElementById('tkDateWrap').style.display = kind==='oneoff'?'':'none';
+
+  var run=(ST.ticker)||null;
+  document.getElementById('tkRunning').textContent = run
+    ? ('on screen now: '+run.count+' message(s), '+run.repeats+' passes ('+run.source+')') : '';
+}
+function toggleCollapse(pid){
+  COLLAPSED[pid] = !COLLAPSED[pid];
+  localStorage.setItem('wb_collapsed', JSON.stringify(COLLAPSED));
+  renderPlaylists();
+}
+function collapseAll(v){
+  (PL.playlists||[]).forEach(function(p){ COLLAPSED[p.id]=v; });
+  localStorage.setItem('wb_collapsed', JSON.stringify(COLLAPSED));
+  renderPlaylists();
+}
+function mediaKind(mid){
+  var m=(PL.media||[]).filter(function(x){return x.id===mid;})[0];
+  return m ? m.kind : null;
+}
+function render(){ renderDevs(); }
+
+(function(){
+  var box=document.getElementById('pvbox');
+  if(box){
+    box.addEventListener('click', previewClick);
+    box.addEventListener('wheel', previewWheel, {passive:false});
+  }
+  var mask=document.getElementById('ixmask');
+  if(mask) mask.addEventListener('change', renderInteractive);
+})();
+// Installable thin client. The service worker caches only this page's shell -
+// all live data comes from whichever MQTT broker you point it at.
+// typeof-guarded: an unguarded `navigator` reference here would throw before
+// renderConnSel()/switchTab() run and take the whole page down with it.
+if (typeof navigator !== 'undefined' && navigator.serviceWorker &&
+    location.protocol === 'https:') {
+  navigator.serviceWorker.register('sw.js').catch(function(e){ log('service worker: '+e.message); });
+}
+renderConnSel();
+switchTab(curTab);
+if (activeConn()) reconnect(); else toggleConnMgr(true);
+</script>
+</body>
+</html>

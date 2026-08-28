@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>wallboard:{{ display }} idle</title>
+<style>
+  html, body { margin:0; padding:0; height:100%; overflow:hidden; background:#000; cursor:none; }
+  /* Scale with the display: 14vw keeps the logo the same fraction of the
+     screen at 1080p and at 4K, where a fixed 260px was a postage stamp. */
+  #logo {
+    position:absolute; top:0; left:0; will-change:transform;
+    width: clamp(150px, 14vw, 760px);
+    height: auto;
+  }
+  #hud {
+    position:absolute; bottom:14px; left:0; right:0; text-align:center;
+    font: clamp(11px, 0.62vw, 26px)/1.6 ui-monospace, "IBM Plex Mono", monospace;
+    color:#1f2733; letter-spacing:.22em; text-transform:uppercase;
+    user-select:none;
+  }
+  #corner { color:#2b3542; }
+</style>
+</head>
+<body>
+  <svg id="logo" width="260" height="150" viewBox="0 0 260 150" aria-label="DVD">
+    <g fill="#ffffff">
+      <!-- DVD wordmark, skewed like the original -->
+      <g transform="skewX(-14) translate(26,0)">
+        <text x="0" y="74" font-family="Arial Black, Arial, Helvetica, sans-serif"
+              font-size="66" font-weight="900" letter-spacing="-3">DVD</text>
+      </g>
+      <!-- the swoosh ellipse under the wordmark -->
+      <ellipse cx="130" cy="86" rx="104" ry="15" fill="none" stroke="#ffffff" stroke-width="7"/>
+      <text x="130" y="122" text-anchor="middle"
+            font-family="Arial, Helvetica, sans-serif" font-size="23"
+            font-weight="700" letter-spacing="7">VIDEO</text>
+    </g>
+  </svg>
+
+  <div id="hud">
+    {{ display }} &middot; no playlist scheduled &middot; <span id="clock"></span> &middot;
+    corner hits: <span id="corner">0</span>
+  </div>
+
+<script>
+(function () {
+  var logo = document.getElementById('logo');
+  var cornerEl = document.getElementById('corner');
+  var clockEl = document.getElementById('clock');
+
+  var W = logo.getBoundingClientRect().width;
+  var H = logo.getBoundingClientRect().height;
+  var x = Math.random() * (innerWidth - W);
+  var y = Math.random() * (innerHeight - H);
+  // px per second, tied to the short edge so a 4K screen does not feel sluggish
+  function speedFor() { return Math.max(90, Math.min(innerWidth, innerHeight) * 0.14); }
+  var speed = speedFor();
+  var ang = (Math.random() * 0.6 + 0.3) * (Math.random() < 0.5 ? 1 : -1);
+  var vx = speed * Math.cos(ang) * (Math.random() < 0.5 ? 1 : -1);
+  var vy = speed * Math.sin(ang);
+  var hue = Math.random() * 360;
+  var corners = 0;
+  var last = performance.now();
+
+  function recolor() {
+    hue = (hue + 47 + Math.random() * 40) % 360;
+    logo.style.filter = 'brightness(0.55) sepia(1) saturate(6) hue-rotate(' + hue + 'deg)';
+  }
+  recolor();
+
+  function frame(now) {
+    var dt = Math.min((now - last) / 1000, 0.1);
+    last = now;
+
+    x += vx * dt;
+    y += vy * dt;
+
+    var hitX = false, hitY = false;
+    var maxX = innerWidth - W, maxY = innerHeight - H;
+
+    if (x <= 0)      { x = 0;    vx = Math.abs(vx);  hitX = true; }
+    else if (x >= maxX) { x = maxX; vx = -Math.abs(vx); hitX = true; }
+    if (y <= 0)      { y = 0;    vy = Math.abs(vy);  hitY = true; }
+    else if (y >= maxY) { y = maxY; vy = -Math.abs(vy); hitY = true; }
+
+    if (hitX || hitY) recolor();
+    if (hitX && hitY) { corners++; cornerEl.textContent = corners; }
+
+    logo.style.transform = 'translate(' + x.toFixed(1) + 'px,' + y.toFixed(1) + 'px)';
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+
+  function tick() {
+    var d = new Date();
+    clockEl.textContent = d.toTimeString().slice(0, 8);
+  }
+  tick();
+  setInterval(tick, 1000);
+
+  addEventListener('resize', function () {
+    W = logo.getBoundingClientRect().width;
+    H = logo.getBoundingClientRect().height;
+    x = Math.min(x, Math.max(0, innerWidth - W));
+    y = Math.min(y, Math.max(0, innerHeight - H));
+    // keep heading, rescale magnitude for the new screen size
+    var s2 = speedFor(), m = Math.hypot(vx, vy) || 1;
+    vx = vx / m * s2; vy = vy / m * s2;
+  });
+})();
+</script>
+</body>
+</html>

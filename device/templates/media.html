@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>wallboard media</title>
+<style>
+  html, body { margin:0; padding:0; height:100%; background:#000; overflow:hidden; cursor:none; }
+  #stage { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; }
+  img, video { max-width:100%; max-height:100%; display:block; background:#000; }
+  /* object-fit is set from the ?fit= query: contain (default) letterboxes,
+     cover fills the screen and crops. */
+  .cover img, .cover video { width:100%; height:100%; object-fit:cover; }
+  .contain img, .contain video { width:100%; height:100%; object-fit:contain; }
+  #err {
+    position:fixed; inset:0; display:none; align-items:center; justify-content:center;
+    color:#8b949e; font:14px/1.6 ui-monospace, monospace; text-align:center; padding:2rem;
+  }
+</style>
+</head>
+<body>
+  <div id="stage" class="{{ fit }}">
+    {% if m.kind == 'video' %}
+      <video id="v" src="{{ src }}" autoplay muted playsinline preload="auto"></video>
+    {% else %}
+      <img id="i" src="{{ src }}" alt="{{ m.original }}">
+    {% endif %}
+  </div>
+  <div id="err">Could not load {{ m.original }}</div>
+
+<script>
+(function () {
+  var err = document.getElementById('err');
+  function fail() { err.style.display = 'flex'; }
+
+  var v = document.getElementById('v');
+  var i = document.getElementById('i');
+  if (i) i.addEventListener('error', fail);
+
+  if (v) {
+    v.addEventListener('error', fail);
+
+    // Autoplay can still be refused; muted + the kiosk's autoplay policy make
+    // this unlikely, but retry rather than sit on a frozen frame.
+    function play() {
+      var p = v.play();
+      if (p && p.catch) p.catch(function () { setTimeout(play, 800); });
+    }
+    play();
+
+    // Videos are not looped: the rotator watches for 'ended' so a clip always
+    // plays to completion before the playlist moves on. Restarting on show also
+    // means a clip is never joined halfway through.
+    document.addEventListener('visibilitychange', function () {
+      if (document.hidden) {
+        v.pause();
+      } else {
+        try { v.currentTime = 0; } catch (e) {}
+        play();
+      }
+    });
+    if (document.hidden) v.pause();
+  }
+})();
+</script>
+</body>
+</html>

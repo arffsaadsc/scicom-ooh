@@ -1,0 +1,122 @@
+#!/usr/bin/env python3
+"""
+Applies wallboard's reboot-required settings. Runs as root via a single narrow
+sudoers rule; the daemon itself stays unprivileged (NoNewPrivileges).
+
+Usage: wallboard-settings-apply /var/lib/wallboard/pending-settings.json
+"""
+import json
+import os
+import re
+import subprocess
+import sys
+
+CONFIG_TXT = "/boot/firmware/config.txt"
+MARK = "# --- wallboard managed ---"
+
+
+def run(cmd, **kw):
+    r = subprocess.run(cmd, capture_output=True, text=True, timeout=60, **kw)
+    print("  $ %s -> %d %s" % (" ".join(cmd), r.returncode,
+                               (r.stdout + r.stderr).strip()[:200]))
+    return r.returncode == 0
+
+
+def set_config_txt(pairs):
+    """Idempotently maintain a managed block at the end of config.txt."""
+    with open(CONFIG_TXT) as fh:
+        text = fh.read()
+    text = re.sub(re.escape(MARK) + r".*?(?=\Z)", "", text, flags=re.S).rstrip() + "\n"
+    block = [MARK]
+    for k, v in pairs.items():
+        if v is not None:
+            block.append("%s=%s" % (k, v))
+    with open(CONFIG_TXT + ".tmp", "w") as fh:
+        fh.write(text + "\n".join(block) + "\n")
+    os.replace(CONFIG_TXT + ".tmp", CONFIG_TXT)
+    print("  config.txt managed block: %s" % pairs)
+
+
+def write_kanshi(user, output, mode, transform):
+    if not output:
+        print("  no output name known; skipping kanshi")
+        return
+    home = "/home/%s" % user
+    d = os.path.join(home, ".config", "kanshi")
+    os.makedirs(d, exist_ok=True)
+    lines = ["# written by wallboard-settings-apply", "profile {",
+             '  output "%s" enable%s%s position 0,0'
+             % (output,
+                (" mode %s" % mode) if mode else "",
+                (" transform %s" % transform) if transform and transform != "normal" else ""),
+             "}"]
+    path = os.path.join(d, "config")
+    with open(path, "w") as fh:
+        fh.write("\n".join(lines) + "\n")
+    for p in (d, path):
+        subprocess.run(["chown", "-R", "%s:%s" % (user, user), p])
+    print("  kanshi profile -> %s" % " ".join(lines[2].split()))
+
+
+def main():
+    cfg = json.load(open(sys.argv[1]))
+    user = cfg.get("user") or "aies-infra"
+    home = "/home/%s" % user
+    print("applying wallboard settings for %s" % user)
+
+    # ---- display: resolution/refresh/rotation via kanshi (compositor level) ----
+    res = (cfg.get("resolution") or "").strip()
+    ref = str(cfg.get("refresh") or "").strip()
+    mode = None
+    if res:
+        mode = "%s@%sHz" % (res, ref) if ref else res
+    write_kanshi(user, cfg.get("output"), mode, cfg.get("rotation"))
+
+    # ---- boot config: 4Kp60 + overscan (these genuinely need a reboot) ----
+    pairs = {}
+    if cfg.get("hdmi_4kp60") in (1, True, "1", "true"):
+        pairs["hdmi_enable_4kp60"] = 1
+    ov = cfg.get("overscan")
+    if ov is not None:
+        pairs["disable_overscan"] = 0 if ov in (1, True, "1", "true") else 1
+    set_config_txt(pairs)
+
+    # ---- identity / locale ----
+    if cfg.get("hostname"):
+        run(["hostnamectl", "set-hostname", str(cfg["hostname"])])
+    if cfg.get("timezone"):
+        run(["timedatectl", "set-timezone", str(cfg["timezone"])])
+    if cfg.get("keyboard"):
+        run(["raspi-config", "nonint", "do_configure_keyboard", str(cfg["keyboard"])])
+        envf = os.path.join(home, ".config", "labwc", "environment")
+        if os.path.exists(envf):
+            txt = open(envf).read()
+            txt = re.sub(r"^XKB_DEFAULT_LAYOUT=.*$",
+                         "XKB_DEFAULT_LAYOUT=%s" % cfg["keyboard"], txt, flags=re.M)
+            open(envf, "w").write(txt)
+            subprocess.run(["chown", "%s:%s" % (user, user), envf])
+            print("  labwc environment layout -> %s" % cfg["keyboard"])
+        # VNC reads /etc/default/keyboard, so it needs a restart to pick it up
+        run(["systemctl", "restart", "wayvnc"])
+
+    # ---- kiosk autostart + screen blanking ----
+    autostart = os.path.join(home, ".config", "labwc", "autostart")
+    want_kiosk = cfg.get("kiosk_autostart", 1) in (1, True, "1", "true")
+    lines = []
+    if want_kiosk:
+        lines = ["/usr/local/bin/wallboard-overlay.py > /tmp/wallboard-overlay.log 2>&1 &",
+                 "/usr/local/bin/wallboard-kiosk.sh > /tmp/wallboard-kiosk.log 2>&1 &"]
+    if cfg.get("blanking") in (1, True, "1", "true"):
+        lines.append("swayidle -w timeout 600 'wlopm --off \\*' resume 'wlopm --on \\*' &")
+    os.makedirs(os.path.dirname(autostart), exist_ok=True)
+    with open(autostart, "w") as fh:
+        fh.write("# written by wallboard-settings-apply\n" + "\n".join(lines) + "\n")
+    subprocess.run(["chown", "-R", "%s:%s" % (user, user),
+                    os.path.dirname(autostart)])
+    print("  labwc autostart: kiosk=%s blanking=%s"
+          % (want_kiosk, bool(cfg.get("blanking"))))
+    print("done")
+
+
+if __name__ == "__main__":
+    main()

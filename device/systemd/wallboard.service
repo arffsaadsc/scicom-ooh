@@ -1,0 +1,33 @@
+[Unit]
+Description=wallboard control service (dashboard playlist rotator)
+Documentation=file:///opt/wallboard/server.py
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=aies-infra
+Group=aies-infra
+WorkingDirectory=/opt/wallboard
+Environment=WALLBOARD_DB=/var/lib/wallboard/wallboard.db
+Environment=WALLBOARD_BIND=127.0.0.1
+Environment=WALLBOARD_PORT=8080
+Environment=WALLBOARD_CDP=http://127.0.0.1:9222
+ExecStart=/usr/bin/python3 /opt/wallboard/server.py
+Restart=always
+RestartSec=3
+# /dev/cec0 is root:video 0660 and NoNewPrivileges blocks sudo,
+# so grant the group directly
+SupplementaryGroups=video
+# NoNewPrivileges is off ONLY so the daemon can invoke the single
+# whitelisted settings helper via sudo (see /etc/sudoers.d/wallboard)
+NoNewPrivileges=no
+ProtectSystem=no
+PrivateTmp=yes
+StateDirectory=wallboard
+# /run/wallboard on tmpfs: the state file is rewritten every second
+RuntimeDirectory=wallboard
+RuntimeDirectoryMode=0755
+
+[Install]
+WantedBy=multi-user.target
