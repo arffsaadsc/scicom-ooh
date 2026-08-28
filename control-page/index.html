@@ -318,26 +318,35 @@
         </div>
       </div>
 
-      <h2>Messages <span class="muted">every run shows the whole enabled list, in order</span></h2>
+      <h2>On screen now</h2>
+      <div id="tkBatch"></div>
+
+      <h2>Queue <span class="muted">what the next push will send</span></h2>
       <div id="tkWarn"></div>
       <div class="card">
         <div id="tkMsgs"></div>
         <div class="row" style="margin-top:8px">
           <input class="url" id="tkNew" placeholder="Message text" onkeydown="if(event.key==='Enter'){tickerAdd();return false;}">
-          <button onclick="tickerAdd()">Add message</button>
+          <button onclick="tickerAdd()">Add to queue</button>
         </div>
       </div>
 
       <h2>Push now</h2>
       <div class="card">
         <div class="row">
-          <button class="primary" onclick="tickerPush()">Push to display</button>
+          <button class="primary" onclick="tickerPush()">Push queue to display</button>
           <span class="muted">passes</span>
           <input class="xs" type="number" min="1" max="50" id="tkRepeats" placeholder="dflt">
           <button onclick="cmd('ticker_stop')">Stop now</button>
           <div class="sp"></div>
           <span class="muted" id="tkRunning"></span>
         </div>
+        <p class="muted" style="margin:9px 0 0">
+          Pushing takes the whole queue, keeps it on screen as a batch, and
+          <strong>empties the queue</strong> &mdash; so the same announcement can't go
+          out twice by accident. The batch is saved on the device, so a restart
+          mid-run picks it back up.
+        </p>
       </div>
 
       <h2>Scheduled messages</h2>
@@ -356,7 +365,8 @@
           <button onclick="tickerSchedAdd()">Add</button>
         </div>
         <p class="muted" style="margin:8px 0 0">A one-off disables itself after it fires.
-          Both kinds run the full enabled message list.</p>
+          Scheduled runs send whatever is in the queue at that moment and
+          <strong>leave the queue in place</strong>, so a weekly window keeps working.</p>
       </div>
     </div>
 
@@ -486,7 +496,7 @@ function switchTab(name){
   localStorage.setItem('wb_tab', name);
   if (name==='log') document.getElementById('logdot').classList.remove('show');
   if (name==='schedule') renderSchedule();
-  if (name==='ticker') renderTicker();
+  if (name==='ticker') { renderTicker(); renderTickerStatus(); }
 }
 
 function log(m){ var el=document.getElementById('log');
@@ -724,7 +734,9 @@ function renderStatus(){
     '<div><dt>Next in</dt><dd>'+((s.current&&s.current.is_video)?'end of clip':((s.seconds_left||0)+'s'))+'</dd></div>'+
     '<div><dt>TV power</dt><dd>'+esc((ST.tv_power||'-').replace('pwr-state:','').trim())+'</dd></div>';
   document.getElementById('pausebtn').textContent = s.paused?'Resume':'Pause';
-  if (curTab==='ticker') renderTicker();
+  // Only the small "what is on screen" line follows status; a full renderTicker()
+  // here rebuilt the config inputs 4x a second and made them impossible to type in.
+  if (curTab==='ticker') renderTickerStatus();
 }
 function renderPlaylists(){
   var ds=DS();
@@ -1225,9 +1237,21 @@ function tickerSchedAdd(){
   if(kind==='oneoff' && !o.at_date){ alert('Pick a date for a one-off.'); return; }
   cmd('ticker_sched_add',o);
 }
+function renderTickerStatus(){
+  var el=document.getElementById('tkRunning');
+  if(!el) return;
+  var run=(ST.ticker)||null;
+  el.innerHTML = run
+    ? '<span class="pill on">on screen</span> '+run.count+' message(s), '+
+      run.repeats+' passes &middot; '+esc(run.source)
+    : '<span class="muted">nothing on screen</span>';
+}
 function renderTicker(){
   var t=TK(), cfg=document.getElementById('tkConfig');
   if(!cfg) return;
+  // never clobber a field the user is currently typing in
+  var ae=document.activeElement;
+  if(ae && ae.dataset && ae.dataset.k && cfg.contains && cfg.contains(ae)) return;
   cfg.innerHTML=TKFIELDS.map(function(f){
     var k=f[0], v=tkVal(k);
     if(f[2]==='select'){
@@ -1303,9 +1327,36 @@ function renderTicker(){
   document.getElementById('tkDaysWrap').style.display = kind==='oneoff'?'none':'';
   document.getElementById('tkDateWrap').style.display = kind==='oneoff'?'':'none';
 
-  var run=(ST.ticker)||null;
-  document.getElementById('tkRunning').textContent = run
-    ? ('on screen now: '+run.count+' message(s), '+run.repeats+' passes ('+run.source+')') : '';
+  renderTickerStatus();
+  renderTickerBatch();
+}
+function renderTickerBatch(){
+  var el=document.getElementById('tkBatch');
+  if(!el) return;
+  var bs=(TK().batches)||[];
+  var active=bs.filter(function(b){return b.active;})[0];
+  var recent=bs.filter(function(b){return !b.active;}).slice(0,3);
+  var html='';
+  if(active){
+    html+='<div class="card" style="margin:0 0 10px;border-color:var(--accent)">'+
+      '<div class="row"><span class="pill on">displaying</span>'+
+      '<span class="muted">'+esc(active.started)+' &middot; '+esc(active.source)+
+      ' &middot; '+active.repeats+' passes</span>'+
+      '<div class="sp"></div><button onclick="cmd(\'ticker_stop\')">Stop</button></div>'+
+      '<ol style="margin:8px 0 0;padding-left:22px">'+
+      (active.items||[]).map(function(x){return '<li>'+esc(x)+'</li>';}).join('')+'</ol></div>';
+  } else {
+    html+='<div class="card empty" style="margin:0 0 10px">No batch on screen.</div>';
+  }
+  if(recent.length){
+    html+='<div class="muted" style="margin:0 0 6px">Recently pushed</div>'+
+      '<table><tbody>'+recent.map(function(b){
+        return '<tr><td class="muted" style="font-family:var(--mono);white-space:nowrap">'+esc(b.started)+'</td>'+
+          '<td class="muted">'+esc(b.source)+'</td>'+
+          '<td>'+(b.items||[]).map(function(x){return esc(x);}).join(' &middot; ')+'</td></tr>';
+      }).join('')+'</tbody></table>';
+  }
+  el.innerHTML=html;
 }
 function toggleCollapse(pid){
   COLLAPSED[pid] = !COLLAPSED[pid];

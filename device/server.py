@@ -128,6 +128,16 @@ CREATE TABLE IF NOT EXISTS ticker_messages (
   position INTEGER NOT NULL DEFAULT 0,
   created  TEXT NOT NULL DEFAULT ''
 );
+CREATE TABLE IF NOT EXISTS ticker_batches (
+  id       INTEGER PRIMARY KEY AUTOINCREMENT,
+  run_id   TEXT NOT NULL,
+  text     TEXT NOT NULL,
+  items    TEXT NOT NULL DEFAULT '[]',   -- json list of the messages in the batch
+  repeats  INTEGER NOT NULL DEFAULT 2,
+  source   TEXT NOT NULL DEFAULT 'manual',
+  started  TEXT NOT NULL DEFAULT '',
+  active   INTEGER NOT NULL DEFAULT 1
+);
 CREATE TABLE IF NOT EXISTS ticker_schedules (
   id        INTEGER PRIMARY KEY AUTOINCREMENT,
   kind      TEXT NOT NULL DEFAULT 'recurring',   -- recurring | oneoff
@@ -970,22 +980,67 @@ class Manager(threading.Thread):
             g.setdefault(r["mirror_group"], []).append(r["id"])
         return {k: sorted(v) for k, v in g.items() if len(v) > 1}
 
-    def ticker_start(self, repeats=None, source="manual"):
-        msgs = [m["text"].strip() for m in ticker_messages(True) if m["text"].strip()]
-        if not msgs:
-            raise ValueError("no enabled ticker messages")
+    def ticker_start(self, repeats=None, source="manual", drain=False):
+        """Turn the queue into a batch and display it.
+
+        A manual push DRAINS the queue: the batch it produced is persisted and
+        keeps displaying, and the queue is left empty so the same announcement
+        cannot be pushed twice by accident. A scheduled run does not drain, so a
+        recurring window keeps working week after week.
+        """
+        rows = [m for m in ticker_messages(True) if m["text"].strip()]
+        if not rows:
+            raise ValueError("the queue is empty - add a message first")
+        msgs = [m["text"].strip() for m in rows]
         cfg = ticker_config()
         text = cfg["separator"].join(msgs)
-        n = int(repeats if repeats else cfg["repeats"])
-        self.ticker = {"run_id": secrets.token_hex(4), "text": text,
-                       "repeats": max(1, n), "started": time.time(),
-                       "count": len(msgs), "source": source, "cfg": cfg}
-        log.info("ticker run (%s): %d message(s) x%d passes", source, len(msgs), n)
-        return {"run_id": self.ticker["run_id"], "messages": len(msgs), "repeats": n}
+        n = max(1, int(repeats if repeats else cfg["repeats"]))
+        run_id = secrets.token_hex(4)
+        with db() as c:
+            c.execute("UPDATE ticker_batches SET active=0 WHERE active=1")
+            bid = c.execute("INSERT INTO ticker_batches(run_id,text,items,repeats,source,started,active)"
+                            " VALUES(?,?,?,?,?,?,1)",
+                            (run_id, text, json.dumps(msgs), n, source,
+                             datetime.now().strftime("%Y-%m-%d %H:%M:%S"))).lastrowid
+            if drain:
+                for m in rows:
+                    c.execute("DELETE FROM ticker_messages WHERE id=?", (m["id"],))
+        self.ticker = {"run_id": run_id, "text": text, "repeats": n,
+                       "started": time.time(), "count": len(msgs),
+                       "source": source, "cfg": cfg, "batch_id": bid}
+        log.info("ticker batch %d (%s): %d message(s) x%d passes%s",
+                 bid, source, len(msgs), n, " [queue drained]" if drain else "")
+        return {"run_id": run_id, "batch_id": bid, "messages": len(msgs),
+                "repeats": n, "drained": bool(drain)}
 
     def ticker_stop(self):
+        if self.ticker:
+            with db() as c:
+                c.execute("UPDATE ticker_batches SET active=0 WHERE active=1")
         self.ticker = None
         return {}
+
+    def ticker_resume(self):
+        """Reload an in-flight batch after a restart, but only a recent one -
+        a stale bar reappearing hours later would be worse than losing it."""
+        with db() as c:
+            r = c.execute("SELECT * FROM ticker_batches WHERE active=1 "
+                          "ORDER BY id DESC LIMIT 1").fetchone()
+        if not r:
+            return
+        try:
+            age = (datetime.now() - datetime.strptime(r["started"], "%Y-%m-%d %H:%M:%S")).total_seconds()
+        except Exception:
+            age = 1e9
+        if age > 900:
+            with db() as c:
+                c.execute("UPDATE ticker_batches SET active=0 WHERE id=?", (r["id"],))
+            return
+        self.ticker = {"run_id": r["run_id"], "text": r["text"], "repeats": r["repeats"],
+                       "started": time.time(), "count": len(json.loads(r["items"] or "[]")),
+                       "source": r["source"] + " (resumed)", "cfg": ticker_config(),
+                       "batch_id": r["id"]}
+        log.info("ticker batch %d resumed after restart (%.0fs old)", r["id"], age)
 
     def ticker_tick(self):
         """Fire due schedules, and expire a run that has clearly finished.
@@ -1000,7 +1055,9 @@ class Manager(threading.Thread):
             # worst case: text is ~30px per character wide, plus a screen width
             span = (len(t["text"]) * cfg["font_size"] + 4000) / max(20, cfg["speed"])
             if time.time() - t["started"] > span * t["repeats"] + 30:
-                log.info("ticker run %s expired", t["run_id"])
+                log.info("ticker batch %s expired", t.get("batch_id"))
+                with db() as c:
+                    c.execute("UPDATE ticker_batches SET active=0 WHERE active=1")
                 self.ticker = None
 
         now = datetime.now()
@@ -1025,7 +1082,8 @@ class Manager(threading.Thread):
                 if r["kind"] == "oneoff":
                     c.execute("UPDATE ticker_schedules SET enabled=0 WHERE id=?", (r["id"],))
             try:
-                self.ticker_start(r["repeats"], source="schedule %d" % r["id"])
+                self.ticker_start(r["repeats"], source="schedule %d" % r["id"],
+                                  drain=False)
             except ValueError as e:
                 log.warning("scheduled ticker skipped: %s", e)
 
@@ -1431,9 +1489,20 @@ def library_payload():
         tv = [dict(r) for r in c.execute("SELECT * FROM tv_schedule ORDER BY id")]
     with db() as c:
         tsched = [dict(r) for r in c.execute("SELECT * FROM ticker_schedules ORDER BY id")]
+    with db() as c:
+        b = c.execute("SELECT * FROM ticker_batches ORDER BY id DESC LIMIT 5").fetchall()
+    batches = []
+    for r in b:
+        x = dict(r)
+        try:
+            x["items"] = json.loads(x["items"] or "[]")
+        except ValueError:
+            x["items"] = []
+        batches.append(x)
     return {"playlists": pls, "media": media, "tv_schedule": tv,
             "ticker": {"config": ticker_config(), "messages": ticker_messages(),
-                       "schedules": tsched, "defaults": TICKER_DEFAULTS},
+                       "schedules": tsched, "defaults": TICKER_DEFAULTS,
+                       "batches": batches},
             "free_mb": shutil.disk_usage(MEDIA_DIR).free // (1024 * 1024),
             "max_upload_mb": MAX_UPLOAD // (1024 * 1024)}
 
@@ -1955,7 +2024,7 @@ def dispatch(action, d):
                 c.execute("UPDATE ticker_messages SET position=? WHERE id=?", (pos, int(mid)))
         return {}
     if action == "ticker_push":
-        return mgr.ticker_start(d.get("repeats"), source="manual")
+        return mgr.ticker_start(d.get("repeats"), source="manual", drain=True)
     if action == "ticker_stop":
         return mgr.ticker_stop()
     if action == "ticker_sched_add":
@@ -2088,6 +2157,7 @@ if __name__ == "__main__":
     build_topics()
     sync_displays()
     mgr.ensure()
+    mgr.ticker_resume()
     mgr.start()
     bus = Bus()
     bus.start()
