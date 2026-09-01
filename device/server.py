@@ -252,7 +252,12 @@ def list_outputs():
                 mm = re.match(r"([0-9]+x[0-9]+)\s*px,\s*([0-9.]+)\s*Hz", s)
                 if mm:
                     cur["mode"] = "%s@%.0fHz" % (mm.group(1), float(mm.group(2)))
-    return [r for r in res if not r["id"].startswith("NOOP")] or res
+    for r in res:
+        # labwc synthesises a NOOP output when no monitor is attached. It is a
+        # usable surface (headless operation) but must never be persisted as a
+        # display, or it outlives the unplug and collides with the real output.
+        r["synthetic"] = r["id"].startswith("NOOP")
+    return res
 
 
 def sync_displays():
@@ -261,11 +266,18 @@ def sync_displays():
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
     with db() as c:
         for o in outs:
+            if o.get("synthetic"):
+                continue
             r = c.execute("SELECT id FROM displays WHERE id=?", (o["id"],)).fetchone()
             if r is None:
                 c.execute("INSERT INTO displays(id,label,first_seen) VALUES(?,?,?)",
                           (o["id"], o["label"] or o["id"], now))
                 log.info("new display registered: %s (%s)", o["id"], o["label"])
+        # purge synthetic rows left behind by older builds
+        gone = c.execute("SELECT id FROM displays WHERE id LIKE 'NOOP%'").fetchall()
+        for g in gone:
+            c.execute("DELETE FROM displays WHERE id=?", (g["id"],))
+            log.info("removed synthetic display row: %s", g["id"])
     return {o["id"]: o for o in outs}
 
 
@@ -933,15 +945,39 @@ class Manager(threading.Thread):
         return False
 
     def ensure(self):
-        """Create a Rotator for every registered display; drop ones that vanish."""
+        """One Rotator per output that is actually PRESENT.
+
+        Driving this off the displays table alone was the bug behind the endless
+        "tabs went stale; rebuilding" loop: a stale NOOP-1 row survived an unplug
+        and mapped to the same CDP port as HDMI-A-1, so two rotators fought over
+        one Chromium, each closing the other's tabs and re-priming forever.
+        """
         self.present = sync_displays()
         with db() as c:
-            rows = c.execute("SELECT * FROM displays WHERE enabled=1").fetchall()
-        for r in rows:
-            if r["id"] not in self.rot:
-                self.rot[r["id"]] = Rotator(r["id"])
-                log.info("display attached: %s (cdp %d)", r["id"], cdp_port_for(r["id"]))
-        for gone in [d for d in self.rot if d not in {r["id"] for r in rows}]:
+            enabled = {r["id"] for r in c.execute("SELECT id FROM displays WHERE enabled=1")}
+
+        # a present output qualifies if it is an enabled display, or is the
+        # headless fallback (so a Pi with no monitor still works)
+        cands = [o for o in self.present
+                 if o in enabled or self.present[o].get("synthetic")]
+
+        # resolve CDP port collisions, preferring real outputs over synthetic
+        chosen, by_port = {}, {}
+        for oid in sorted(cands, key=lambda x: (bool(self.present[x].get("synthetic")), x)):
+            port = cdp_port_for(oid)
+            if port in by_port:
+                log.warning("display %s shares cdp %d with %s; ignoring %s",
+                            oid, port, by_port[port], oid)
+                continue
+            by_port[port] = oid
+            chosen[oid] = port
+
+        for oid, port in chosen.items():
+            if oid not in self.rot:
+                self.rot[oid] = Rotator(oid)
+                log.info("display attached: %s (cdp %d)", oid, port)
+        for gone in [d for d in self.rot if d not in chosen]:
+            log.info("display detached: %s", gone)
             self.rot.pop(gone, None)
 
     def desired_for(self, display):
